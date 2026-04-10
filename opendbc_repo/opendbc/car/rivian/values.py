@@ -52,7 +52,7 @@ class CAR(Platforms):
     CarSpecs(mass=3152., wheelbase=_WB_R1T_M, steerRatio=15.2),
     wmis={WMI.RIVIAN_TRUCK},
     lines={ModelLine.R1T},
-    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024},
+    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
   )
   RIVIAN_R1S_GEN1 = RivianPlatformConfig(
     [
@@ -61,7 +61,7 @@ class CAR(Platforms):
     CarSpecs(mass=3206., wheelbase=_WB_R1S_M, steerRatio=15.2),
     wmis={WMI.RIVIAN_MPV},
     lines={ModelLine.R1S},
-    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024},
+    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
   )
 
 
@@ -157,6 +157,11 @@ class CarControllerParams:
 
   def __init__(self, CP):
     pass
+
+
+class RivianFlags(IntFlag):
+  """Set on CarParams.flags when live CAN fingerprint lacks 0x321 (Gen2 / 2025+ stack)."""
+  GEN2 = 1
 
 
 class RivianSafetyFlags(IntFlag):

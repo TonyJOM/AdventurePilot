@@ -4,7 +4,7 @@ from opendbc.car import Bus
 from opendbc.car.lateral import apply_driver_steer_torque_limits, common_fault_avoidance
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.rivian.riviancan import create_lka_steering, create_longitudinal, create_wheel_touch, create_adas_status
-from opendbc.car.rivian.values import CarControllerParams
+from opendbc.car.rivian.values import CarControllerParams, RivianFlags
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
 
@@ -53,7 +53,7 @@ class CarController(CarControllerBase, MadsCarController):
 
     can_sends.append(create_lka_steering(self.packer, self.frame, CS.acm_lka_hba_cmd, send_torque, CC.enabled, CC.latActive, self.mads, lka_act_toi, send_elk_request))
 
-    if self.frame % 5 == 0:
+    if self.frame % 5 == 0 and not (self.CP.flags & RivianFlags.GEN2) and CS.sccm_wheel_touch is not None:
       can_sends.append(create_wheel_touch(self.packer, CS.sccm_wheel_touch, CC.enabled))
 
     # Longitudinal control

@@ -1,5 +1,5 @@
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
-from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelYear, narrow_rivian_fw_match_by_vin
+from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, RivianFlags, WMI, ModelYear, narrow_rivian_fw_match_by_vin
 from opendbc.car.fw_versions import match_fw_to_car
 from opendbc.car.car_helpers import normalize_car_fingerprint
 
@@ -31,3 +31,18 @@ class TestRivian:
   def test_normalize_deprecated_platform(self):
     assert normalize_car_fingerprint("RIVIAN_R1_GEN1") == str(CAR.RIVIAN_R1S_GEN1)
     assert normalize_car_fingerprint("RIVIAN_R1") == str(CAR.RIVIAN_R1S_GEN1)
+
+  def test_vin_fuzzy_2025_model_year(self):
+    vin = "7PDABCD12S1234567"  # VIS year code S = 2025
+    assert FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS) == {str(CAR.RIVIAN_R1S_GEN1)}
+
+  def test_gen2_flag_set_when_0x321_absent_on_bus0(self):
+    from opendbc.car.rivian.interface import CarInterface
+
+    fp_no_321 = {0: {0x100: 8}, 1: {}, 2: {}}  # no SCCM_WheelTouch (0x321) → GEN2
+    cp = CarInterface.get_params(str(CAR.RIVIAN_R1S_GEN1), fp_no_321, [], False, False, docs=False)
+    assert cp.flags & RivianFlags.GEN2
+
+    fp_with_321 = {0: {0x321: 8}, 1: {}, 2: {}}
+    cp1 = CarInterface.get_params(str(CAR.RIVIAN_R1S_GEN1), fp_with_321, [], False, False, docs=False)
+    assert not (cp1.flags & RivianFlags.GEN2)
