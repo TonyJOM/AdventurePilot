@@ -140,11 +140,11 @@ class CarControllerParams:
   # conservatively to reach a maximum of 3.0 m/s^2 turning left at 80 mph
 
   # These refer to turning left (symmetric torque counts; ACM_lkaStrToqReq raw − 1024):
-  # Interpolated cap: 550 below 9 m/s, 300 above 17 m/s (STEER_MAX matches lookup peak)
+  # Interpolated cap: 500 below 25 mph (~11.18 m/s), 325 above 17 m/s (STEER_MAX matches lookup peak)
   # TODO: it is theorized older models have different steering racks and achieve down to half the
   #  lateral acceleration referenced here at all speeds. detect this and ship a torque increase for those models
-  STEER_MAX = 550
-  STEER_MAX_LOOKUP = [9, 17], [550, 300]
+  STEER_MAX = 500
+  STEER_MAX_LOOKUP = [11.18, 17], [500, 325]  # 11.18 m/s ≈ 25 mph
   STEER_STEP = 1
   STEER_DELTA_UP = 3  # torque increase per refresh
   STEER_DELTA_DOWN = 5  # torque decrease per refresh

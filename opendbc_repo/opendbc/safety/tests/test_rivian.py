@@ -22,14 +22,14 @@ def checksum(msg):
   return addr, ret, bus
 
 
-class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTest, common.LongitudinalAccelSafetyTest,
-                           common.VehicleSpeedSafetyTest):
+class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafetyTest, common.SteerRequestCutSafetyTest,
+                           common.LongitudinalAccelSafetyTest, common.VehicleSpeedSafetyTest):
 
   TX_MSGS = [[0x120, 0], [0x321, 2], [0x162, 2]]
   RELAY_MALFUNCTION_ADDRS = {0: (0x120,), 2: (0x321, 0x162)}
   FWD_BLACKLISTED_ADDRS = {0: [0x321, 0x162], 2: [0x120]}
 
-  MAX_TORQUE_LOOKUP = [9, 17], [550, 300]
+  MAX_TORQUE_LOOKUP = [11.18, 17], [500, 325]  # 11.18 m/s ≈ 25 mph
   DYNAMIC_MAX_TORQUE = True
   MAX_RATE_UP = 3
   MAX_RATE_DOWN = 5
@@ -38,6 +38,10 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafe
 
   DRIVER_TORQUE_ALLOWANCE = 100
   DRIVER_TORQUE_FACTOR = 2
+
+  # Keep in sync with RIVIAN_STEERING_LIMITS in opendbc/safety/modes/rivian.h (same as Hyundai steer_req tolerance)
+  MIN_VALID_STEERING_FRAMES = 89
+  MAX_INVALID_STEERING_FRAMES = 2
 
   cnt_speed = 0
   cnt_speed_2 = 0
