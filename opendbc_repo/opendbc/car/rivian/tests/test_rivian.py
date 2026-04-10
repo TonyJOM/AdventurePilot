@@ -30,3 +30,4 @@ class TestRivian:
 
   def test_normalize_deprecated_platform(self):
     assert normalize_car_fingerprint("RIVIAN_R1_GEN1") == str(CAR.RIVIAN_R1S_GEN1)
+    assert normalize_car_fingerprint("RIVIAN_R1") == str(CAR.RIVIAN_R1S_GEN1)

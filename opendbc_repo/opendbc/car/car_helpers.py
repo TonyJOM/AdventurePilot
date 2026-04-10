@@ -16,6 +16,8 @@ from opendbc.sunnypilot.car.interfaces import setup_interfaces as sunnypilot_int
 FRAME_FINGERPRINT = 100  # 1s
 
 _DEPRECATED_CAR_FINGERPRINT = {
+  # Manual FP / CarPlatformBundle from before R1T vs R1S split
+  "RIVIAN_R1": "RIVIAN_R1S_GEN1",
   "RIVIAN_R1_GEN1": "RIVIAN_R1S_GEN1",
 }
 
