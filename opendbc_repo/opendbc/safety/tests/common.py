@@ -255,12 +255,8 @@ class TorqueSteeringSafetyTestBase(SafetyTestBase, abc.ABC):
       return np.concatenate([np.arange(0, min_speed, 5), np.arange(min_speed, max_speed, 0.5), np.arange(max_speed, 40, 5)])
 
   def _get_max_torque(self, speed):
-    # matches lateral.h: fudged_speed = vehicle_speed.min / VEHICLE_SPEED_FACTOR - 1
-    if self.DYNAMIC_MAX_TORQUE:
-      fudged_speed = float(self.safety.get_vehicle_speed_min()) - 1.0
-    else:
-      fudged_speed = speed - 1
-    torque = int(np.interp(fudged_speed, self.MAX_TORQUE_LOOKUP[0], self.MAX_TORQUE_LOOKUP[1]) + 1)
+    # matches safety fudge
+    torque = int(np.interp(speed - 1, self.MAX_TORQUE_LOOKUP[0], self.MAX_TORQUE_LOOKUP[1]) + 1)
     return min(torque, self.MAX_TORQUE)
 
   @abc.abstractmethod
@@ -1148,8 +1144,8 @@ class CarSafetyTest(SafetyTest, MadsSafetyTestBase):
   def test_safety_tick(self):
     self.safety.set_timer(int(2e6))
     self.safety.set_controls_allowed(True)
-    self.safety.set_controls_allowed_lat(True)
+    self.safety.set_controls_allowed_lateral(True)
     self.safety.safety_tick_current_safety_config()
     self.assertFalse(self.safety.get_controls_allowed())
-    self.assertFalse(self.safety.get_controls_allowed_lat())
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
     self.assertFalse(self.safety.safety_config_valid())

@@ -22,13 +22,12 @@ class ModelYear(StrEnum):
   P_2023 = "P"
   R_2024 = "R"
   S_2025 = "S"
+  T_2026 = "T"
 
 
 @dataclass
 class RivianCarDocs(CarDocs):
   package: str = "All"
-  car_parts: CarParts = field(default_factory=CarParts.common([CarHarness.rivian_a]))
-  setup_video: str = "https://youtu.be/uaISd1j7Z4U"
 
 
 @dataclass
@@ -40,59 +39,41 @@ class RivianPlatformConfig(PlatformConfig):
   years: set[ModelYear] = field(default_factory=set)
 
 
-# NHTSA-style dimensions (Wikipedia / common press sheets): R1T 135.9 in (3,452 mm), R1S 121.1 in (3,076 mm).
-_WB_R1T_M = 3.452
-_WB_R1S_M = 3.076
+class RivianFlags(IntFlag):
+  GEN2 = 1
+
+
+class RivianSafetyFlags(IntFlag):
+  LONG_CONTROL = 1
+
 
 class CAR(Platforms):
-  RIVIAN_R1T_GEN1 = RivianPlatformConfig(
+  RIVIAN_R1 = RivianPlatformConfig(
     [
-      RivianCarDocs("Rivian R1T 2022-24"),
+      RivianCarDocs("Rivian R1S 2022-24", setup_video="https://youtu.be/uaISd1j7Z4U", car_parts=CarParts.common([CarHarness.rivian_a])),
+      RivianCarDocs("Rivian R1S 2025", car_parts=CarParts.common([CarHarness.rivian_b])),
+      RivianCarDocs("Rivian R1T 2022-24", setup_video="https://youtu.be/uaISd1j7Z4U", car_parts=CarParts.common([CarHarness.rivian_a])),
+      RivianCarDocs("Rivian R1T 2025", car_parts=CarParts.common([CarHarness.rivian_b])),
     ],
-    CarSpecs(mass=3152., wheelbase=_WB_R1T_M, steerRatio=15.2),
-    wmis={WMI.RIVIAN_TRUCK},
-    lines={ModelLine.R1T},
-    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
-  )
-  RIVIAN_R1S_GEN1 = RivianPlatformConfig(
-    [
-      RivianCarDocs("Rivian R1S 2022-24"),
-    ],
-    CarSpecs(mass=3206., wheelbase=_WB_R1S_M, steerRatio=15.2),
-    wmis={WMI.RIVIAN_MPV},
-    lines={ModelLine.R1S},
+    CarSpecs(mass=3206., wheelbase=3.08, steerRatio=15.2),
+    wmis={WMI.RIVIAN_TRUCK, WMI.RIVIAN_MPV},
+    lines={ModelLine.R1T, ModelLine.R1S},
     years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
   )
 
 
 def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str]:
   # Rivian VIN reference: https://www.rivianforums.com/forum/threads/rivian-vin-decoder.1546
-  # R1T vs R1S: WMI 7FC (truck) vs 7PD (MPV). VDS[0] is not a reliable T/S model line on real VINs.
   vin_obj = Vin(vin)
+  line = vin_obj.vds[:1]
   year = vin_obj.vis[:1]
 
   candidates = set()
   for platform in CAR:
-    if vin_obj.wmi in platform.config.wmis and year in platform.config.years:
+    if vin_obj.wmi in platform.config.wmis and line in platform.config.lines and year in platform.config.years:
       candidates.add(platform)
 
   return {str(c) for c in candidates}
-
-
-RIVIAN_R1T_STR = str(CAR.RIVIAN_R1T_GEN1)
-RIVIAN_R1S_STR = str(CAR.RIVIAN_R1S_GEN1)
-RIVIAN_GEN1_PLATFORMS = frozenset((RIVIAN_R1T_STR, RIVIAN_R1S_STR))
-
-
-def narrow_rivian_fw_match_by_vin(matches: set[str], vin: str) -> set[str]:
-  """When identical EPS FW matches both Gen1 platforms, pick R1T vs R1S from VIN WMI (+ year)."""
-  if not RIVIAN_GEN1_PLATFORMS <= matches:
-    return matches
-
-  vin_candidates = match_fw_to_car_fuzzy({}, vin, {})
-  if len(vin_candidates) == 1:
-    return (matches - RIVIAN_GEN1_PLATFORMS) | vin_candidates
-  return matches - RIVIAN_GEN1_PLATFORMS
 
 
 RIVIAN_VERSION_REQUEST = bytes([uds.SERVICE_TYPE.READ_DATA_BY_IDENTIFIER]) + \
@@ -139,8 +120,8 @@ class CarControllerParams:
   # and lateral acceleration falls linearly as speed decreases from 38 mph to 20 mph. These values are set
   # conservatively to reach a maximum of 3.0 m/s^2 turning left at 80 mph
 
-  # These refer to turning left (symmetric torque counts; ACM_lkaStrToqReq raw − 1024):
-  # Interpolated cap: 450 below 9 m/s, 350 above 17 m/s (STEER_MAX matches lookup peak)
+  # These refer to turning left:
+  # 250 is ~2.8 m/s^2 above 17 m/s, then linearly ramps to ~1.6 m/s^2 from 17 m/s to 9 m/s
   # TODO: it is theorized older models have different steering racks and achieve down to half the
   #  lateral acceleration referenced here at all speeds. detect this and ship a torque increase for those models
   STEER_MAX = 450
@@ -157,15 +138,6 @@ class CarControllerParams:
 
   def __init__(self, CP):
     pass
-
-
-class RivianFlags(IntFlag):
-  """Set on CarParams.flags when live CAN fingerprint lacks 0x321 (Gen2 / 2025+ stack)."""
-  GEN2 = 1
-
-
-class RivianSafetyFlags(IntFlag):
-  LONG_CONTROL = 1
 
 
 DBC = CAR.create_dbc_map()

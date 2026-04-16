@@ -13,7 +13,6 @@ from opendbc.car.fingerprints import FW_VERSIONS
 from opendbc.car.fw_query_definitions import ESSENTIAL_ECUS, AddrType, EcuAddrBusType, FwQueryConfig, LiveFwVersions, OfflineFwVersions
 from opendbc.car.interfaces import get_interface_attr
 from opendbc.car.isotp_parallel_query import IsoTpParallelQuery
-from opendbc.car.vin import VIN_UNKNOWN, is_valid_vin
 
 Ecu = CarParams.Ecu
 FUZZY_EXCLUDE_ECUS = [Ecu.fwdCamera, Ecu.fwdRadar, Ecu.eps, Ecu.debug]
@@ -166,14 +165,6 @@ def match_fw_to_car(fw_versions: list[CarParams.CarFw], vin: str, allow_exact: b
         matches |= config.match_fw_to_car_fuzzy(fw_versions_dict, vin, VERSIONS[brand])
 
     if len(matches):
-      # Rivian R1T vs R1S share EPS FW; CAN FP has no per-model patterns — narrow with VIN WMI/year.
-      if is_valid_vin(vin) and vin != VIN_UNKNOWN:
-        from opendbc.car.rivian.values import RIVIAN_GEN1_PLATFORMS, narrow_rivian_fw_match_by_vin
-
-        if len(matches) > 1 and RIVIAN_GEN1_PLATFORMS <= matches:
-          narrowed = narrow_rivian_fw_match_by_vin(matches, vin)
-          if len(narrowed) >= 1:
-            matches = narrowed
       return exact_match, matches
 
   return True, set()

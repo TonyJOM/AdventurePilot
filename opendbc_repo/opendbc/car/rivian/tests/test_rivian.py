@@ -1,48 +1,23 @@
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
-from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, RivianFlags, WMI, ModelYear, narrow_rivian_fw_match_by_vin
-from opendbc.car.fw_versions import match_fw_to_car
-from opendbc.car.car_helpers import normalize_car_fingerprint
+from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear
 
 
 class TestRivian:
-  def test_vin_fuzzy_wmi_year_r1t(self):
-    vin = "7FCABCD12N1234567"
-    assert FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS) == {str(CAR.RIVIAN_R1T_GEN1)}
+  def test_custom_fuzzy_fingerprinting(self, subtests):
+    for platform in CAR:
+      with subtests.test(platform=platform.name):
+        for wmi in WMI:
+          for line in ModelLine:
+            for year in ModelYear:
+              for bad in (True, False):
+                vin = ["0"] * 17
+                vin[:3] = wmi
+                vin[3] = line.value
+                vin[9] = year.value
+                if bad:
+                  vin[3] = "Z"
+                vin = "".join(vin)
 
-  def test_vin_fuzzy_wmi_year_r1s(self):
-    vin = "7PDABCD12N1234567"
-    assert FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS) == {str(CAR.RIVIAN_R1S_GEN1)}
-
-  def test_vin_fuzzy_unknown_year(self):
-    vin = "7FCABCD12Z1234567"
-    assert FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS) == set()
-
-  def test_narrow_rivian_after_shared_fw_match(self):
-    r1t, r1s = str(CAR.RIVIAN_R1T_GEN1), str(CAR.RIVIAN_R1S_GEN1)
-    assert narrow_rivian_fw_match_by_vin({r1t, r1s}, "7PDABCD12R1234567") == {r1s}
-    assert narrow_rivian_fw_match_by_vin({r1t, r1s}, "7FCABCD12R1234567") == {r1t}
-
-  def test_full_match_fw_to_car_empty_fw_vin_only(self):
-    vin = "7PDABCD12R1234567"
-    exact, matches = match_fw_to_car([], vin)
-    assert exact is False
-    assert matches == {str(CAR.RIVIAN_R1S_GEN1)}
-
-  def test_normalize_deprecated_platform(self):
-    assert normalize_car_fingerprint("RIVIAN_R1_GEN1") == str(CAR.RIVIAN_R1S_GEN1)
-    assert normalize_car_fingerprint("RIVIAN_R1") == str(CAR.RIVIAN_R1S_GEN1)
-
-  def test_vin_fuzzy_2025_model_year(self):
-    vin = "7PDABCD12S1234567"  # VIS year code S = 2025
-    assert FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS) == {str(CAR.RIVIAN_R1S_GEN1)}
-
-  def test_gen2_flag_set_when_0x321_absent_on_bus0(self):
-    from opendbc.car.rivian.interface import CarInterface
-
-    fp_no_321 = {0: {0x100: 8}, 1: {}, 2: {}}  # no SCCM_WheelTouch (0x321) → GEN2
-    cp = CarInterface.get_params(str(CAR.RIVIAN_R1S_GEN1), fp_no_321, [], False, False, docs=False)
-    assert cp.flags & RivianFlags.GEN2
-
-    fp_with_321 = {0: {0x321: 8}, 1: {}, 2: {}}
-    cp1 = CarInterface.get_params(str(CAR.RIVIAN_R1S_GEN1), fp_with_321, [], False, False, docs=False)
-    assert not (cp1.flags & RivianFlags.GEN2)
+                matches = FW_QUERY_CONFIG.match_fw_to_car_fuzzy({}, vin, FW_VERSIONS)
+                should_match = year in platform.config.years and not bad
+                assert (matches == {platform}) == should_match, "Bad match"

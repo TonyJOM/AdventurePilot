@@ -15,9 +15,9 @@ class CarState(CarStateBase, CarStateExt):
     CarStateExt.__init__(self, CP, CP_SP)
     self.last_speed = 30
 
-    self.acm_lka_hba_cmd = None
+    self.acm_lka_hba_cmd: dict | None = None
     self.sccm_wheel_touch: dict | None = None
-    self.vdm_adas_status = None
+    self.vdm_adas_status: list[dict] | None = None
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -46,7 +46,7 @@ class CarState(CarStateBase, CarStateExt):
     ret.steeringTorque = cp.vl["EPAS_SystemStatus"]["EPAS_TorsionBarTorque"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > 1.0, 5)
 
-    ret.steerFaultTemporary = cp.vl["EPAS_SystemStatus"]["H_CAN_EPSS_ToiFlt"] != 0
+    ret.steerFaultTemporary = cp.vl["EPAS_AdasStatus"]["EPAS_EacErrorCode"] != 0
 
     # Cruise state
     speed = min(int(cp_adas.vl["ACM_tsrCmd"]["ACM_tsrSpdDisClsMain"]), 85)
@@ -58,9 +58,6 @@ class CarState(CarStateBase, CarStateExt):
       ret.cruiseState.speed = -1
     ret.cruiseState.available = True  # cp.vl["VDM_AdasSts"]["VDM_AdasInterfaceStatus"] == 1
     ret.cruiseState.standstill = cp.vl["VDM_AdasSts"]["VDM_AdasVehicleHoldStatus"] == 1
-
-    # CarStateSP: speed limit from TSR (ACM_tsrSpdDisClsMain) for speed limit assist
-    ret_sp.speedLimit = self.last_speed * CV.MPH_TO_MS if speed != 0 else 0.0
 
     # ACM_Status->ACM_FaultSupervisorState normally 1, appears to go to 3 when either:
     # 1. car in park/not in drive (normal)
@@ -76,11 +73,11 @@ class CarState(CarStateBase, CarStateExt):
     # Gear
     ret.gearShifter = GEAR_MAP.get(int(cp.vl["VDM_PropStatus"]["VDM_Prndl_Status"]), GearShifter.unknown)
 
-    # Doors and seatbelt — GEN2 has no usable CAN signals; stock ACC handles disengage
-    if self.CP.flags & RivianFlags.GEN2:
-      ret.doorOpen = False
-      ret.seatbeltUnlatched = False
-    else:
+    # Doors and seatbelt
+    # GEN2 has no CAN signal for these, but stock ACC already handles disengaging
+    # door locks prevent opening while driving
+    # on standstill, stock ACC disengages when a door is opened or seatbelt is unbuckled
+    if not (self.CP.flags & RivianFlags.GEN2):
       ret.doorOpen = any(cp_adas.vl["IndicatorLights"][door] != 2 for door in ("RearDriverDoor", "FrontPassengerDoor", "DriverDoor", "RearPassengerDoor"))
       ret.seatbeltUnlatched = cp.vl["RCM_Status"]["RCM_Status_IND_WARN_BELT_DRIVER"] != 0
 
@@ -99,9 +96,9 @@ class CarState(CarStateBase, CarStateExt):
     self.acm_lka_hba_cmd = copy.copy(cp_cam.vl["ACM_lkaHbaCmd"])
     if not (self.CP.flags & RivianFlags.GEN2):
       self.sccm_wheel_touch = copy.copy(cp.vl["SCCM_WheelTouch"])
-    else:
-      self.sccm_wheel_touch = None
-    self.vdm_adas_status = copy.copy(cp.vl["VDM_AdasSts"])
+    # This message can lag and send two messages at once, make sure we forward all of them
+    adas_status_msgs = cp.vl_all["VDM_AdasSts"]
+    self.vdm_adas_status = [dict(zip(adas_status_msgs, vals, strict=True)) for vals in zip(*adas_status_msgs.values(), strict=True)]
 
     CarStateExt.update(self, ret, can_parsers)
 

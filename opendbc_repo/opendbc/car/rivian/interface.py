@@ -18,7 +18,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.rivian)]
 
-    # GEN2 (2025+): SCCM_WheelTouch not on PT bus — same heuristic as sunnypilot/opendbc
+    # GEN2 (2025+) doesn't have SCCM_WheelTouch on the bus
     if 0x321 not in fingerprint[0]:
       ret.flags |= RivianFlags.GEN2.value
 
@@ -26,7 +26,6 @@ class CarInterface(CarInterfaceBase):
     ret.steerLimitTimer = 0.4
     CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
 
-    ret.steerAtStandstill = True
     ret.steerControlType = structs.CarParams.SteerControlType.torque
     ret.radarUnavailable = True
 
