@@ -157,12 +157,20 @@ def match_fw_to_car(fw_versions: list[CarParams.CarFw], vin: str, allow_exact: b
     matches: set[str] = set()
     for brand in VERSIONS.keys():
       fw_versions_dict = build_fw_dict(fw_versions, filter_brand=brand)
-      matches |= match_func(fw_versions_dict, match_brand=brand, log=log)
+      brand_matches = match_func(fw_versions_dict, match_brand=brand, log=log)
 
       # If specified and no matches so far, fall back to brand's fuzzy fingerprinting function
       config = FW_QUERY_CONFIGS[brand]
-      if not exact_match and not len(matches) and config.match_fw_to_car_fuzzy is not None:
-        matches |= config.match_fw_to_car_fuzzy(fw_versions_dict, vin, VERSIONS[brand])
+      if config.match_fw_to_car_fuzzy is not None:
+        vin_matches = config.match_fw_to_car_fuzzy(fw_versions_dict, vin, VERSIONS[brand])
+        rivian_vin_disambiguated = brand == "rivian" and exact_match and len(vin_matches) == 1
+        shared_or_missing_exact_match = len(brand_matches) != 1 and (not len(brand_matches) or len(brand_matches & vin_matches))
+        if rivian_vin_disambiguated and shared_or_missing_exact_match:
+          brand_matches = vin_matches
+        elif not exact_match and not len(brand_matches):
+          brand_matches = vin_matches
+
+      matches |= brand_matches
 
     if len(matches):
       return exact_match, matches

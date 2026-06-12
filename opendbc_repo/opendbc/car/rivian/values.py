@@ -4,7 +4,7 @@ from enum import StrEnum, IntFlag
 from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, structs, uds
 from opendbc.car.docs_definitions import CarHarness, CarDocs, CarParts
 from opendbc.car.fw_query_definitions import FwQueryConfig, Request, StdQueries, p16
-from opendbc.car.vin import Vin
+from opendbc.car.vin import Vin, is_valid_vin
 
 
 class WMI(StrEnum):
@@ -23,6 +23,9 @@ class ModelYear(StrEnum):
   R_2024 = "R"
   S_2025 = "S"
   T_2026 = "T"
+
+
+SUPPORTED_YEARS = {ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025}
 
 
 @dataclass
@@ -48,32 +51,51 @@ class RivianSafetyFlags(IntFlag):
 
 
 class CAR(Platforms):
-  RIVIAN_R1 = RivianPlatformConfig(
+  RIVIAN_R1S = RivianPlatformConfig(
     [
       RivianCarDocs("Rivian R1S 2022-24", setup_video="https://youtu.be/uaISd1j7Z4U", car_parts=CarParts.common([CarHarness.rivian_a])),
       RivianCarDocs("Rivian R1S 2025", car_parts=CarParts.common([CarHarness.rivian_b])),
+    ],
+    CarSpecs(mass=3206., wheelbase=3.08, steerRatio=15.2),
+    wmis={WMI.RIVIAN_MPV},
+    lines={ModelLine.R1S},
+    years=SUPPORTED_YEARS,
+  )
+  RIVIAN_R1T = RivianPlatformConfig(
+    [
       RivianCarDocs("Rivian R1T 2022-24", setup_video="https://youtu.be/uaISd1j7Z4U", car_parts=CarParts.common([CarHarness.rivian_a])),
       RivianCarDocs("Rivian R1T 2025", car_parts=CarParts.common([CarHarness.rivian_b])),
     ],
-    CarSpecs(mass=3206., wheelbase=3.08, steerRatio=15.2),
-    wmis={WMI.RIVIAN_TRUCK, WMI.RIVIAN_MPV},
-    lines={ModelLine.R1T, ModelLine.R1S},
-    years={ModelYear.N_2022, ModelYear.P_2023, ModelYear.R_2024, ModelYear.S_2025},
+    CarSpecs(mass=3206., wheelbase=3.449, steerRatio=15.2),
+    wmis={WMI.RIVIAN_TRUCK},
+    lines={ModelLine.R1T},
+    years=SUPPORTED_YEARS,
   )
 
 
-def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str]:
-  # Rivian VIN reference: https://www.rivianforums.com/forum/threads/rivian-vin-decoder.1546
+def platform_from_vin(vin: str) -> CAR | None:
+  if not is_valid_vin(vin):
+    return None
+
   vin_obj = Vin(vin)
   line = vin_obj.vds[:1]
   year = vin_obj.vis[:1]
 
-  candidates = set()
-  for platform in CAR:
-    if vin_obj.wmi in platform.config.wmis and line in platform.config.lines and year in platform.config.years:
-      candidates.add(platform)
+  if year not in SUPPORTED_YEARS:
+    return None
 
-  return {str(c) for c in candidates}
+  if vin_obj.wmi == WMI.RIVIAN_TRUCK and line == ModelLine.R1T:
+    return CAR.RIVIAN_R1T
+  if vin_obj.wmi == WMI.RIVIAN_MPV and line == ModelLine.R1S:
+    return CAR.RIVIAN_R1S
+  return None
+
+
+def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str]:
+  platform = platform_from_vin(vin)
+  if platform is None or platform not in offline_fw_versions:
+    return set()
+  return {str(platform)}
 
 
 RIVIAN_VERSION_REQUEST = bytes([uds.SERVICE_TYPE.READ_DATA_BY_IDENTIFIER]) + \

@@ -26,11 +26,20 @@ def _migrate_car_platform_bundle(_params):
   if not old_platform:
     return
 
-  from opendbc.car.fingerprints import MIGRATION  # lazy: avoids heavy import at module level
-  if old_platform not in MIGRATION:
-    return
+  from opendbc.car.fingerprints import MIGRATION, RIVIAN_LEGACY_PLATFORMS  # lazy: avoids heavy import at module level
 
-  new_platform = str(MIGRATION[old_platform])
+  if old_platform in RIVIAN_LEGACY_PLATFORMS:
+    old_model = bundle.get("model")
+    if old_model == "R1S":
+      new_platform = "RIVIAN_R1S"
+    elif old_model == "R1T":
+      new_platform = "RIVIAN_R1T"
+    else:
+      return
+  elif old_platform in MIGRATION:
+    new_platform = str(MIGRATION[old_platform])
+  else:
+    return
 
   with open(CAR_LIST_JSON_OUT) as f:
     car_list = json.load(f)

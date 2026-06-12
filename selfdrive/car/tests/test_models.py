@@ -12,7 +12,7 @@ from openpilot.common.parameterized import parameterized_class
 from opendbc.car import DT_CTRL, gen_empty_fingerprint, structs
 from opendbc.car.can_definitions import CanData
 from opendbc.car.car_helpers import FRAME_FINGERPRINT, interfaces
-from opendbc.car.fingerprints import MIGRATION
+from opendbc.car.fingerprints import MIGRATION, migrate_car_fingerprint
 from opendbc.car.honda.values import CAR as HONDA, HondaFlags
 from opendbc.car.structs import car
 from opendbc.car.tests.routes import non_tested_cars, routes, CarTestRoute
@@ -93,7 +93,7 @@ class TestCarModelBase(unittest.TestCase):
           alpha_long = True
         if cls.platform is None:
           live_fingerprint = msg.carParams.carFingerprint
-          cls.platform = MIGRATION.get(live_fingerprint, live_fingerprint)
+          cls.platform = migrate_car_fingerprint(live_fingerprint, msg.carParams.carVin)
 
       # Log which can frame the panda safety mode left ELM327, for CAN validity checks
       elif msg.which() == 'pandaStates':

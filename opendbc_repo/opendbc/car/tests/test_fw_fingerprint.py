@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from opendbc.car.can_definitions import CanData
 from opendbc.car.car_helpers import interfaces
+from opendbc.car.rivian.values import CAR as RIVIAN, WMI as RIVIAN_WMI, ModelLine as RIVIAN_MODEL_LINE, ModelYear as RIVIAN_MODEL_YEAR
 from opendbc.car.structs import CarParams
 from opendbc.car.fingerprints import FW_VERSIONS
 from opendbc.car.fw_versions import FW_QUERY_CONFIGS, FUZZY_EXCLUDE_ECUS, VERSIONS, build_fw_dict, \
@@ -19,6 +20,14 @@ Ecu = CarParams.Ecu
 ECU_NAME = {v: k for k, v in Ecu.schema.enumerants.items()}
 
 
+def get_test_vin(car_model: str) -> str:
+  if car_model == RIVIAN.RIVIAN_R1S:
+    return f"{RIVIAN_WMI.RIVIAN_MPV}{RIVIAN_MODEL_LINE.R1S.value}00001{RIVIAN_MODEL_YEAR.P_2023.value}0000000"
+  if car_model == RIVIAN.RIVIAN_R1T:
+    return f"{RIVIAN_WMI.RIVIAN_TRUCK}{RIVIAN_MODEL_LINE.R1T.value}00001{RIVIAN_MODEL_YEAR.P_2023.value}0000000"
+  return ""
+
+
 class TestFwFingerprint(unittest.TestCase):
   def assertFingerprints(self, candidates, expected):
     candidates = list(candidates)
@@ -30,6 +39,7 @@ class TestFwFingerprint(unittest.TestCase):
   def test_exact_match(self, brand, car_model, ecus, test_non_essential):
     config = FW_QUERY_CONFIGS[brand]
     CP = CarParams()
+    CP.carVin = get_test_vin(car_model)
     for _ in range(20):
       fw = []
       for ecu, fw_versions in ecus.items():

@@ -8,7 +8,7 @@ from opendbc.car.hyundai.values import CAR as HYUNDAI
 from opendbc.car.mazda.values import CAR as MAZDA
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.nissan.values import CAR as NISSAN
-from opendbc.car.rivian.values import CAR as RIVIAN
+from opendbc.car.rivian.values import platform_from_vin as rivian_platform_from_vin
 from opendbc.car.subaru.values import CAR as SUBARU
 from opendbc.car.toyota.values import CAR as TOYOTA
 from opendbc.car.volkswagen.values import CAR as VW
@@ -17,6 +17,7 @@ FW_VERSIONS = get_interface_attr('FW_VERSIONS', combine_brands=True, ignore_none
 _FINGERPRINTS = get_interface_attr('FINGERPRINTS', combine_brands=True, ignore_none=True)
 
 _DEBUG_ADDRESS = {1880: 8}   # reserved for debug purposes
+RIVIAN_LEGACY_PLATFORMS = {"RIVIAN_R1", "RIVIAN_R1_GEN1", "RIVIAN_R1_GEN2"}
 
 
 def is_valid_for_fingerprint(msg, car_fingerprint: dict[int, int]):
@@ -334,8 +335,18 @@ MIGRATION = {
   "SKODA SCALA 1ST GEN": VW.SKODA_KAMIQ_MK1,
   "SKODA_SCALA_MK1": VW.SKODA_KAMIQ_MK1,
   "SKODA SUPERB 3RD GEN": VW.SKODA_SUPERB_MK3,
-  "RIVIAN_R1_GEN1": RIVIAN.RIVIAN_R1,
-  "RIVIAN_R1_GEN2": RIVIAN.RIVIAN_R1,
+  "RIVIAN_R1_GEN1": "RIVIAN_R1",
+  "RIVIAN_R1_GEN2": "RIVIAN_R1",
 
   "mock": MOCK.MOCK,
 }
+
+
+def migrate_car_fingerprint(car_fingerprint: str, vin: str = "") -> str:
+  migrated = str(MIGRATION.get(car_fingerprint, car_fingerprint))
+  if car_fingerprint in RIVIAN_LEGACY_PLATFORMS or migrated in RIVIAN_LEGACY_PLATFORMS:
+    platform = rivian_platform_from_vin(vin)
+    if platform is not None:
+      return str(platform)
+
+  return migrated

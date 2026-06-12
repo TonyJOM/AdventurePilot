@@ -6,7 +6,7 @@ import functools
 import traceback
 
 from cereal import messaging, car, log
-from opendbc.car.fingerprints import MIGRATION
+from opendbc.car.fingerprints import migrate_car_fingerprint
 from opendbc.car.toyota.values import EPS_SCALE, ToyotaSafetyFlags
 from opendbc.car.ford.values import CAR as FORD, FordFlags, FordSafetyFlags
 from opendbc.car.hyundai.values import HyundaiSafetyFlags
@@ -315,7 +315,7 @@ def migrate_pandaStates(msgs):
   # Migrate safety param base on carParams
   CP = next((m.carParams for _, m in msgs if m.which() == 'carParams'), None)
   assert CP is not None, "carParams message not found"
-  fingerprint = MIGRATION.get(CP.carFingerprint, CP.carFingerprint)
+  fingerprint = migrate_car_fingerprint(CP.carFingerprint, CP.carVin)
   if fingerprint in safety_param_migration:
     safety_param = safety_param_migration[fingerprint].value
   elif len(CP.safetyConfigs):
@@ -418,7 +418,7 @@ def migrate_carParams(msgs):
   ops = []
   for index, msg in msgs:
     CP = msg.as_builder()
-    CP.carParams.carFingerprint = MIGRATION.get(CP.carParams.carFingerprint, CP.carParams.carFingerprint)
+    CP.carParams.carFingerprint = migrate_car_fingerprint(CP.carParams.carFingerprint, CP.carParams.carVin)
     for car_fw in CP.carParams.carFw:
       car_fw.brand = CP.carParams.brand
     ops.append((index, CP.as_reader()))

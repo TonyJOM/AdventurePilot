@@ -6,7 +6,7 @@ import os
 import traceback
 from tqdm import tqdm
 from opendbc.car.car_helpers import interface_names
-from opendbc.car.fingerprints import MIGRATION
+from opendbc.car.fingerprints import migrate_car_fingerprint
 from opendbc.car.fw_versions import VERSIONS, match_fw_to_car
 from openpilot.tools.lib.logreader import LogReader, ReadMode
 from openpilot.tools.lib.route import SegmentRange
@@ -66,8 +66,7 @@ if __name__ == "__main__":
           if len(car_fw) == 0:
             print("WARNING: no fw")
 
-          live_fingerprint = CP.carFingerprint
-          live_fingerprint = MIGRATION.get(live_fingerprint, live_fingerprint)
+          live_fingerprint = migrate_car_fingerprint(CP.carFingerprint, CP.carVin)
 
           if args.car is not None:
             live_fingerprint = args.car
@@ -178,4 +177,3 @@ if __name__ == "__main__":
   print(f"Correct fuzzy matches:        {good_fuzzy}")
   print(f"Wrong fuzzy matches:          {wrong_fuzzy}")
   print()
-

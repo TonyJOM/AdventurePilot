@@ -5,15 +5,26 @@ from opendbc.car import gen_empty_fingerprint
 from opendbc.car.can_definitions import CanRecvCallable, CanSendCallable
 from opendbc.car.carlog import carlog
 from opendbc.car.structs import CarParams, CarParamsT
-from opendbc.car.fingerprints import eliminate_incompatible_cars, all_legacy_fingerprint_cars
+from opendbc.car.fingerprints import eliminate_incompatible_cars, all_legacy_fingerprint_cars, RIVIAN_LEGACY_PLATFORMS
 from opendbc.car.fw_versions import ObdCallback, get_fw_versions_ordered, get_present_ecus, match_fw_to_car
 from opendbc.car.mock.values import CAR as MOCK
+from opendbc.car.rivian.values import platform_from_vin as rivian_platform_from_vin
 from opendbc.car.values import BRANDS
 from opendbc.car.vin import get_vin, is_valid_vin, VIN_UNKNOWN
 
 from opendbc.sunnypilot.car.interfaces import setup_interfaces as sunnypilot_interfaces
 
 FRAME_FINGERPRINT = 100  # 1s
+
+
+def _cached_params_usable(cached_params: CarParamsT | None) -> bool:
+  if cached_params is None or cached_params.brand == "mock" or len(cached_params.carFw) == 0 or cached_params.carVin == VIN_UNKNOWN:
+    return False
+
+  if cached_params.carFingerprint in RIVIAN_LEGACY_PLATFORMS and rivian_platform_from_vin(cached_params.carVin) is None:
+    return False
+
+  return True
 
 
 def load_interfaces(brand_names):
@@ -93,9 +104,9 @@ def fingerprint(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_mu
 
   start_time = time.monotonic()
   if not skip_fw_query:
-    if cached_params is not None and cached_params.brand != "mock" and len(cached_params.carFw) > 0 and \
-       cached_params.carVin is not VIN_UNKNOWN and not disable_fw_cache:
+    if _cached_params_usable(cached_params) and not disable_fw_cache:
       carlog.warning("Using cached CarParams")
+      assert cached_params is not None
       vin_rx_addr, vin_rx_bus, vin = -1, -1, cached_params.carVin
       car_fw = list(cached_params.carFw)
       cached = True
