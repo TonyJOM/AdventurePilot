@@ -14,9 +14,13 @@ from opendbc.car.rivian.values import DBC
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 ButtonType = structs.CarState.ButtonEvent.Type
+GearShifter = structs.CarState.GearShifter
 
 MAX_SET_SPEED = 85 * CV.MPH_TO_MS
 MIN_SET_SPEED = 20 * CV.MPH_TO_MS
+MADS_STALK_DOWN_MAX_SPEED = 20 * CV.MPH_TO_MS
+ACM_FEATURE_STATUS_STANDBY = 0
+VDM_USER_ADAS_REQUEST_DOWN = (3, 4)
 
 
 class CarStateExt:
@@ -31,6 +35,25 @@ class CarStateExt:
     self.increase_counter = 0
     self.decrease_counter = 0
     self.stalk_down_counter = 0
+    self.prev_user_adas_request = 0
+
+  def update_mads_stalk_down(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
+    cp = can_parsers[Bus.pt]
+    cp_cam = can_parsers[Bus.cam]
+
+    user_adas_request = int(cp.vl["VDM_AdasSts"]["VDM_UserAdasRequest"])
+    stalk_down_rising_edge = user_adas_request in VDM_USER_ADAS_REQUEST_DOWN and self.prev_user_adas_request not in VDM_USER_ADAS_REQUEST_DOWN
+
+    if stalk_down_rising_edge:
+      stalk_down_allowed = (ret.gearShifter == GearShifter.drive and
+                            not ret.brakePressed and
+                            int(cp_cam.vl["ACM_Status"]["ACM_FeatureStatus"]) == ACM_FEATURE_STATUS_STANDBY and
+                            ret.vEgoRaw < MADS_STALK_DOWN_MAX_SPEED)
+
+      if stalk_down_allowed:
+        ret.buttonEvents = [*ret.buttonEvents, structs.CarState.ButtonEvent(pressed=True, type=ButtonType.lkas)]
+
+    self.prev_user_adas_request = user_adas_request
 
   def update_longitudinal_upgrade(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     cp_park = can_parsers[Bus.alt]
@@ -92,6 +115,8 @@ class CarStateExt:
   def update(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     if self.CP_SP.flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE:
       self.update_longitudinal_upgrade(ret, can_parsers)
+
+    self.update_mads_stalk_down(ret, can_parsers)
 
   @staticmethod
   def get_parser(CP, CP_SP) -> dict[StrEnum, CANParser]:
