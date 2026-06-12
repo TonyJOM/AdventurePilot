@@ -3,7 +3,7 @@ from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.rivian.carcontroller import CarController
 from opendbc.car.rivian.carstate import CarState
 from opendbc.car.rivian.radar_interface import RadarInterface
-from opendbc.car.rivian.values import RivianFlags, RivianSafetyFlags
+from opendbc.car.rivian.values import CAR, RivianFlags, RivianSafetyFlags
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 
@@ -21,6 +21,8 @@ class CarInterface(CarInterfaceBase):
     # GEN2 (2025+) doesn't have SCCM_WheelTouch on the bus
     if 0x321 not in fingerprint[0]:
       ret.flags |= RivianFlags.GEN2.value
+    elif candidate == CAR.RIVIAN_R1T:
+      ret.safetyConfigs[0].safetyParam |= RivianSafetyFlags.AGGRESSIVE_TUNE.value
 
     ret.steerActuatorDelay = 0.15
     ret.steerLimitTimer = 0.4

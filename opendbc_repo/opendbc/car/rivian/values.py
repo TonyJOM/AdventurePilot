@@ -48,6 +48,7 @@ class RivianFlags(IntFlag):
 
 class RivianSafetyFlags(IntFlag):
   LONG_CONTROL = 1
+  AGGRESSIVE_TUNE = 2
 
 
 class CAR(Platforms):
@@ -165,6 +166,22 @@ class CarControllerParams:
 
   def __init__(self, CP):
     pass
+
+
+RIVIAN_TUNE = {
+  False: {
+    'steer_max_lookup': ([9, 13, 25, 27], [385, 350, 295, 275]),
+    'steer_delta_up': 3,
+    'steer_delta_down': 5,
+    'use_torque_filter': False,
+  },
+  True: {
+    'steer_max_lookup': ([9, 13, 25, 27], [440, 420, 325, 305]),
+    'steer_delta_up': 4,
+    'steer_delta_down': 7,
+    'use_torque_filter': True,
+  },
+}
 
 
 DBC = CAR.create_dbc_map()

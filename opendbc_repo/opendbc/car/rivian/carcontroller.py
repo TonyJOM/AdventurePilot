@@ -1,10 +1,13 @@
+from types import SimpleNamespace
+
 import numpy as np
 from opendbc.can import CANPacker
-from opendbc.car import Bus
+from opendbc.car import Bus, DT_CTRL
+from opendbc.car.common.filter_simple import FirstOrderFilter
 from opendbc.car.lateral import apply_driver_steer_torque_limits, common_fault_avoidance
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.rivian.riviancan import create_lka_steering, create_longitudinal, create_wheel_touch, create_adas_status
-from opendbc.car.rivian.values import CarControllerParams, RivianFlags
+from opendbc.car.rivian.values import CarControllerParams, RivianFlags, RivianSafetyFlags, RIVIAN_TUNE
 
 from opendbc.sunnypilot.car.rivian.mads import MadsCarController
 
@@ -26,6 +29,17 @@ class CarController(CarControllerBase, MadsCarController):
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
     self.cancel_frames = 0
+    safety_param = CP.safetyConfigs[0].safetyParam if len(CP.safetyConfigs) else 0
+    self.tune = RIVIAN_TUNE[bool(safety_param & RivianSafetyFlags.AGGRESSIVE_TUNE.value)]
+    self.torque_filter = FirstOrderFilter(0.0, 0.2, DT_CTRL, initialized=False)
+    self.torque_limits = SimpleNamespace(
+      STEER_MAX=max(self.tune['steer_max_lookup'][1]),
+      STEER_DELTA_UP=self.tune['steer_delta_up'],
+      STEER_DELTA_DOWN=self.tune['steer_delta_down'],
+      STEER_DRIVER_ALLOWANCE=CarControllerParams.STEER_DRIVER_ALLOWANCE,
+      STEER_DRIVER_MULTIPLIER=CarControllerParams.STEER_DRIVER_MULTIPLIER,
+      STEER_DRIVER_FACTOR=CarControllerParams.STEER_DRIVER_FACTOR,
+    )
 
   def update(self, CC, CC_SP, CS, now_nanos):
     MadsCarController.update(self, CC, CC_SP, CS)
@@ -33,15 +47,23 @@ class CarController(CarControllerBase, MadsCarController):
     can_sends = []
 
     apply_torque = 0
-    steer_max = round(float(np.interp(CS.out.vEgoRaw, CarControllerParams.STEER_MAX_LOOKUP[0],
-                                      CarControllerParams.STEER_MAX_LOOKUP[1])))
+    steer_max = round(float(np.interp(CS.out.vEgoRaw, self.tune['steer_max_lookup'][0],
+                                      self.tune['steer_max_lookup'][1])))
     if self.mads.lat_active:
-      new_torque = int(round(CC.actuators.torque * steer_max))
+      if self.tune['use_torque_filter']:
+        self.torque_filter.update_alpha(float(np.interp(CS.out.vEgoRaw, [5., 10., 20.], [0.2, 0.1, 0.0])))
+        desired_torque = self.torque_filter.update(CC.actuators.torque)
+      else:
+        desired_torque = CC.actuators.torque
+      new_torque = int(round(desired_torque * steer_max))
       apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last,
-                                                      CS.out.steeringTorque, CarControllerParams, steer_max)
+                                                      CS.out.steeringTorque, self.torque_limits, steer_max)
       if abs(CS.out.steeringAngleDeg) > HIGH_ANGLE_THRESHOLD_DEG:
         cap = int(round(steer_max * HIGH_ANGLE_CAP_FRAC))
         apply_torque = max(-cap, min(cap, apply_torque))
+    else:
+      self.torque_filter.x = 0.0
+      self.torque_filter.initialized = True
 
     self.angle_limit_counter, lka_act_toi = common_fault_avoidance(
       abs(CS.out.steeringAngleDeg) >= MAX_ANGLE_DEG,

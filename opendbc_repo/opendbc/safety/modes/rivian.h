@@ -8,10 +8,13 @@
 #define RIVIAN_PRNDL_DRIVE 4U
 #define RIVIAN_USER_ADAS_REQUEST_DOWN_1 3U
 #define RIVIAN_USER_ADAS_REQUEST_DOWN_2 4U
+#define RIVIAN_FLAG_LONG_CONTROL 1
+#define RIVIAN_FLAG_AGGRESSIVE_TUNE 2
 
 static uint8_t rivian_prev_user_adas_request = 0U;
 static uint8_t rivian_acm_feature_status = RIVIAN_ACM_FEATURE_STATUS_STANDBY;
 static bool rivian_prndl_drive = false;
+static bool rivian_aggressive_tune = false;
 
 static bool rivian_is_stalk_down_request(uint8_t user_adas_request) {
   return (user_adas_request == RIVIAN_USER_ADAS_REQUEST_DOWN_1) ||
@@ -165,6 +168,29 @@ static bool rivian_tx_hook(const CANPacket_t *msg) {
     .has_steer_req_tolerance = true,
   };
 
+  const TorqueSteeringLimits RIVIAN_AGGRESSIVE_STEERING_LIMITS = {
+    .max_torque = 440,
+    .dynamic_max_torque = true,
+    // 3-point envelope around the aggressive carcontroller lookup
+    // ([9,13,25,27]->[440,420,325,305]). Panda lookup_t is fixed at
+    // 3 x/y elements, so this curve stays >= software at every speed.
+    .max_torque_lookup = {
+      {13., 25., 27.},
+      {440, 325, 305},
+    },
+    .max_rate_up = 4,
+    .max_rate_down = 7,
+    .max_rt_delta = 125,
+    .driver_torque_multiplier = 2,
+    .driver_torque_allowance = 100,
+    .type = TorqueDriverLimited,
+    // 2-frame blip: openpilot sends torque=0 and steer_req=0; panda holds last torque for rate limit
+    .min_valid_request_frames = 89,
+    .max_invalid_request_frames = 2,
+    .min_valid_request_rt_interval = 810000,  // 810ms min between blips
+    .has_steer_req_tolerance = true,
+  };
+
   const LongitudinalLimits RIVIAN_LONG_LIMITS = {
     .max_accel = 200,
     .min_accel = -350,
@@ -178,8 +204,9 @@ static bool rivian_tx_hook(const CANPacket_t *msg) {
     if (msg->addr == 0x120U) {
       int desired_torque = ((msg->data[2] << 3U) | (msg->data[3] >> 5U)) - 1024U;
       bool steer_req = (msg->data[3] >> 4) & 1U;
+      const TorqueSteeringLimits limits = rivian_aggressive_tune ? RIVIAN_AGGRESSIVE_STEERING_LIMITS : RIVIAN_STEERING_LIMITS;
 
-      if (steer_torque_cmd_checks(desired_torque, steer_req, RIVIAN_STEERING_LIMITS)) {
+      if (steer_torque_cmd_checks(desired_torque, steer_req, limits)) {
         tx = false;
       }
     }
@@ -214,11 +241,10 @@ static safety_config rivian_init(uint16_t param) {
   };
 
   bool rivian_longitudinal = false;
+  rivian_aggressive_tune = GET_FLAG(param, RIVIAN_FLAG_AGGRESSIVE_TUNE);
 
-  SAFETY_UNUSED(param);
   #ifdef ALLOW_DEBUG
-    const int FLAG_RIVIAN_LONG_CONTROL = 1;
-    rivian_longitudinal = GET_FLAG(param, FLAG_RIVIAN_LONG_CONTROL);
+    rivian_longitudinal = GET_FLAG(param, RIVIAN_FLAG_LONG_CONTROL);
   #endif
 
   rivian_prev_user_adas_request = 0U;

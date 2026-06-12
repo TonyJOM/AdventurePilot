@@ -243,6 +243,47 @@ class TestRivianStockSafety(TestRivianSafetyBase):
         values = {"VDM_AdasInterfaceStatus": interface_status}
         self.assertTrue(self._tx(self.packer.make_can_msg_safety("VDM_AdasSts", 2, values)))
 
+  def test_aggressive_torque_rejected_without_flag(self):
+    self._reset_speed_measurement(9)
+    self.safety.set_controls_allowed(True)
+    self._set_prev_torque(385)
+    self.assertFalse(self._tx(self._torque_cmd_msg(386)))
+
+  def _set_aggressive_safety_hooks(self):
+    self.safety.set_safety_hooks(CarParams.SafetyModel.rivian, RivianSafetyFlags.AGGRESSIVE_TUNE)
+    self.safety.init_tests()
+
+  def test_aggressive_torque_limits(self):
+    self._set_aggressive_safety_hooks()
+    self.safety.set_controls_allowed(True)
+
+    self._reset_speed_measurement(9)
+    self._set_prev_torque(440)
+    self.assertTrue(self._tx(self._torque_cmd_msg(440)))
+    self.assertFalse(self._tx(self._torque_cmd_msg(441)))
+
+    self._reset_speed_measurement(26)
+    self._set_prev_torque(325)
+    self.assertTrue(self._tx(self._torque_cmd_msg(325)))
+    self.assertFalse(self._tx(self._torque_cmd_msg(327)))
+
+  def test_aggressive_torque_rates(self):
+    self._set_aggressive_safety_hooks()
+    self.safety.set_controls_allowed(True)
+
+    self._set_prev_torque(0)
+    self.assertTrue(self._tx(self._torque_cmd_msg(4)))
+    self._set_prev_torque(0)
+    self.assertFalse(self._tx(self._torque_cmd_msg(5)))
+
+    self._reset_speed_measurement(9)
+    self._set_prev_torque(440)
+    self._reset_torque_driver_measurement(-321)
+    self.assertTrue(self._tx(self._torque_cmd_msg(433)))
+    self._set_prev_torque(440)
+    self._reset_torque_driver_measurement(-321)
+    self.assertFalse(self._tx(self._torque_cmd_msg(434)))
+
 
 class TestRivianLongitudinalSafety(TestRivianSafetyBase):
 

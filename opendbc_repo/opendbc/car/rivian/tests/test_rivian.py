@@ -1,8 +1,9 @@
 import unittest
 import math
 
+from opendbc.car import gen_empty_fingerprint
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
-from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear, platform_from_vin
+from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear, RivianFlags, RivianSafetyFlags, platform_from_vin
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.fw_versions import match_fw_to_car
 from opendbc.car.structs import CarParams
@@ -15,6 +16,13 @@ def make_vin(wmi: WMI, line: ModelLine, year: ModelYear) -> str:
   vin[8] = "1"
   vin[9] = year.value
   return "".join(vin)
+
+
+def make_fingerprint(gen2: bool = False) -> dict[int, dict[int, int]]:
+  fingerprint = gen_empty_fingerprint()
+  if not gen2:
+    fingerprint[0][0x321] = 7
+  return fingerprint
 
 
 class TestRivian(unittest.TestCase):
@@ -53,8 +61,27 @@ class TestRivian(unittest.TestCase):
       assert matches == {platform}
 
   def test_r1s_r1t_geometry_and_torque_params(self):
-    for platform, wheelbase in ((CAR.RIVIAN_R1S, 3.08), (CAR.RIVIAN_R1T, 3.449)):
+    for platform, wheelbase, friction in ((CAR.RIVIAN_R1S, 3.08, 0.07), (CAR.RIVIAN_R1T, 3.449, 0.10)):
       CP = interfaces[platform].get_non_essential_params(platform)
       assert math.isclose(CP.wheelbase, wheelbase, rel_tol=0, abs_tol=1e-6)
       assert math.isclose(CP.lateralTuning.torque.latAccelFactor, 2.8, rel_tol=0, abs_tol=1e-6)
-      assert math.isclose(CP.lateralTuning.torque.friction, 0.07, rel_tol=0, abs_tol=1e-6)
+      assert math.isclose(CP.lateralTuning.torque.friction, friction, rel_tol=0, abs_tol=1e-6)
+
+  def test_aggressive_tune_safety_flag_selection(self):
+    cases = (
+      (CAR.RIVIAN_R1T, False, True),
+      (CAR.RIVIAN_R1T, True, False),
+      (CAR.RIVIAN_R1S, False, False),
+      (CAR.RIVIAN_R1S, True, False),
+    )
+    for platform, gen2, aggressive_expected in cases:
+      with self.subTest(platform=platform.name, gen2=gen2):
+        CP = interfaces[platform].get_params(platform, make_fingerprint(gen2), list(), False, False, False)
+        assert bool(CP.flags & RivianFlags.GEN2.value) == gen2
+        aggressive = bool(CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.AGGRESSIVE_TUNE.value)
+        assert aggressive == aggressive_expected
+
+  def test_aggressive_tune_safety_flag_composes_with_long_control(self):
+    CP = interfaces[CAR.RIVIAN_R1T].get_params(CAR.RIVIAN_R1T, make_fingerprint(), list(), True, False, False)
+    assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.AGGRESSIVE_TUNE.value
+    assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.LONG_CONTROL.value
