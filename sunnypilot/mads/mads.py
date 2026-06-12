@@ -171,14 +171,18 @@ class ModularAssistiveDrivingSystem:
       if be.type == ButtonType.cancel:
         if not self.selfdrive.enabled and self.selfdrive.enabled_prev:
           self.events_sp.add(EventNameSP.manualLongitudinalRequired)
-      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
-        if self.enabled:
-          if self.selfdrive.enabled:
-            self.events_sp.add(EventNameSP.manualSteeringRequired)
-          else:
-            self.events_sp.add(EventNameSP.lkasDisable)
+      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always or self.CP.brand == "rivian"):
+        if self.CP.brand == "rivian":
+          if not self.enabled:
+            self.events_sp.add(EventNameSP.lkasEnable)
         else:
-          self.events_sp.add(EventNameSP.lkasEnable)
+          if self.enabled:
+            if self.selfdrive.enabled:
+              self.events_sp.add(EventNameSP.manualSteeringRequired)
+            else:
+              self.events_sp.add(EventNameSP.lkasDisable)
+          else:
+            self.events_sp.add(EventNameSP.lkasEnable)
 
     if not CS.cruiseState.available and not self.no_main_cruise:
       self.events.remove(EventName.buttonEnable)

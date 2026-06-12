@@ -2,13 +2,29 @@
 
 #include "opendbc/safety/declarations.h"
 
+#define RIVIAN_MADS_STALK_DOWN_MAX_SPEED_MS (20.0 * 0.44704)
+#define RIVIAN_ACM_FEATURE_STATUS_STANDBY 0U
+#define RIVIAN_ACM_FEATURE_STATUS_ACC 1U
+#define RIVIAN_PRNDL_DRIVE 4U
+#define RIVIAN_USER_ADAS_REQUEST_DOWN_1 3U
+#define RIVIAN_USER_ADAS_REQUEST_DOWN_2 4U
+
+static uint8_t rivian_prev_user_adas_request = 0U;
+static uint8_t rivian_acm_feature_status = RIVIAN_ACM_FEATURE_STATUS_STANDBY;
+static bool rivian_prndl_drive = false;
+
+static bool rivian_is_stalk_down_request(uint8_t user_adas_request) {
+  return (user_adas_request == RIVIAN_USER_ADAS_REQUEST_DOWN_1) ||
+         (user_adas_request == RIVIAN_USER_ADAS_REQUEST_DOWN_2);
+}
+
 static uint8_t rivian_get_counter(const CANPacket_t *msg) {
-  // Signal: ESP_Status_Counter, VDM_PropStatus_Counter
+  // Signal: ESP_Status_Counter, VDM_PropStatus_Counter, VDM_AdasStatus_Counter
   return msg->data[1] & 0xFU;
 }
 
 static uint32_t rivian_get_checksum(const CANPacket_t *msg) {
-  // Signal: ESP_Status_Checksum, VDM_PropStatus_Checksum
+  // Signal: ESP_Status_Checksum, VDM_PropStatus_Checksum, VDM_AdasStatus_Checksum
   return msg->data[0];
 }
 
@@ -36,6 +52,8 @@ static uint32_t rivian_compute_checksum(const CANPacket_t *msg) {
     chksum = _rivian_compute_checksum(msg, 0x1D, 0xB1);
   } else if (msg->addr == 0x150U) {
     chksum = _rivian_compute_checksum(msg, 0x1D, 0x9A);
+  } else if (msg->addr == 0x162U) {
+    chksum = _rivian_compute_checksum(msg, 0x1D, 0xD1);
   } else {
   }
   return chksum;
@@ -50,6 +68,29 @@ static bool rivian_get_quality_flag_valid(const CANPacket_t *msg) {
   } else {
   }
   return valid;
+}
+
+static bool rivian_mads_stalk_down_allowed(void) {
+  const float speed = vehicle_speed.values[0] / VEHICLE_SPEED_FACTOR;
+  return m_mads_state.system_enabled &&
+         rivian_prndl_drive &&
+         !brake_pressed &&
+         (rivian_acm_feature_status == RIVIAN_ACM_FEATURE_STATUS_STANDBY) &&
+         (speed < RIVIAN_MADS_STALK_DOWN_MAX_SPEED_MS);
+}
+
+static void rivian_update_mads_stalk_down(const CANPacket_t *msg) {
+  const uint8_t user_adas_request = msg->data[7] & 0x7U;
+  const bool stalk_down_rising_edge = rivian_is_stalk_down_request(user_adas_request) &&
+                                      !rivian_is_stalk_down_request(rivian_prev_user_adas_request);
+
+  mads_button_press = MADS_BUTTON_NOT_PRESSED;
+
+  if (stalk_down_rising_edge && rivian_mads_stalk_down_allowed()) {
+    mads_button_press = MADS_BUTTON_PRESSED;
+  }
+
+  rivian_prev_user_adas_request = user_adas_request;
 }
 
 static void rivian_rx_hook(const CANPacket_t *msg) {
@@ -69,6 +110,8 @@ static void rivian_rx_hook(const CANPacket_t *msg) {
       // Disable controls if speeds from VDM and ESP ECUs are too far apart.
       float vdm_speed = ((msg->data[5] << 8) | msg->data[6]) * 0.01 * KPH_TO_MS;
       speed_mismatch_check(vdm_speed);
+
+      rivian_prndl_drive = (msg->data[2] & 0xFU) == RIVIAN_PRNDL_DRIVE;
     }
 
     // Driver torque
@@ -81,13 +124,18 @@ static void rivian_rx_hook(const CANPacket_t *msg) {
     if (msg->addr == 0x38fU) {
       brake_pressed = (msg->data[2] >> 7) & 1U;
     }
+
+    // MADS-only stalk-down shortcut while stock ACC is unavailable.
+    if (msg->addr == 0x162U) {
+      rivian_update_mads_stalk_down(msg);
+    }
   }
 
   if (msg->bus == 2U) {
     // Cruise state
     if (msg->addr == 0x100U) {
-      const int feature_status = msg->data[2] >> 5U;
-      pcm_cruise_check(feature_status == 1);
+      rivian_acm_feature_status = msg->data[2] >> 5U;
+      pcm_cruise_check(rivian_acm_feature_status == RIVIAN_ACM_FEATURE_STATUS_ACC);
     }
   }
 }
@@ -159,6 +207,7 @@ static safety_config rivian_init(uint16_t param) {
   static RxCheck rivian_rx_checks[] = {
     {.msg = {{0x208, 0, 8, 50U, .max_counter = 14U}, { 0 }, { 0 }}},                                                             // ESP_Status (speed)
     {.msg = {{0x150, 0, 7, 50U, .max_counter = 14U}, { 0 }, { 0 }}},                                                             // VDM_PropStatus (gas pedal & 2nd speed)
+    {.msg = {{0x162, 0, 8, 100U, .max_counter = 14U, .ignore_quality_flag = true}, { 0 }, { 0 }}},                                // VDM_AdasSts (MADS stalk shortcut)
     {.msg = {{0x380, 0, 5, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // EPAS_SystemStatus (driver torque)
     {.msg = {{0x38f, 0, 6, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // iBESP2 (brakes)
     {.msg = {{0x100, 2, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // ACM_Status (cruise state)
@@ -171,6 +220,10 @@ static safety_config rivian_init(uint16_t param) {
     const int FLAG_RIVIAN_LONG_CONTROL = 1;
     rivian_longitudinal = GET_FLAG(param, FLAG_RIVIAN_LONG_CONTROL);
   #endif
+
+  rivian_prev_user_adas_request = 0U;
+  rivian_acm_feature_status = RIVIAN_ACM_FEATURE_STATUS_STANDBY;
+  rivian_prndl_drive = false;
 
   // FIXME: cppcheck thinks that rivian_longitudinal is always false. This is not true
   // if ALLOW_DEBUG is defined but cppcheck is run without ALLOW_DEBUG

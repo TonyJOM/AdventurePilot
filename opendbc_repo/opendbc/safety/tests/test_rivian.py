@@ -8,6 +8,17 @@ from opendbc.safety.tests.common import CANPackerSafety
 from opendbc.car.rivian.values import RivianSafetyFlags
 from opendbc.car.rivian.riviancan import checksum as _checksum
 
+RIVIAN_MADS_STALK_DOWN_MAX_SPEED = 20 * 0.44704
+RIVIAN_ACM_FEATURE_STATUS_STANDBY = 0
+RIVIAN_ACM_FEATURE_STATUS_ACC = 1
+RIVIAN_ACM_FEATURE_STATUS_HWP = 2
+RIVIAN_PRNDL_PARK = 1
+RIVIAN_PRNDL_DRIVE = 4
+RIVIAN_USER_ADAS_REQUEST_IDLE = 0
+RIVIAN_USER_ADAS_REQUEST_UP_1 = 1
+RIVIAN_USER_ADAS_REQUEST_DOWN_1 = 3
+RIVIAN_USER_ADAS_REQUEST_DOWN_2 = 4
+
 
 def checksum(msg):
   addr, dat, bus = msg
@@ -18,6 +29,8 @@ def checksum(msg):
     ret[0] = _checksum(ret[1:], 0x1D, 0xB1)
   elif addr == 0x150:
     ret[0] = _checksum(ret[1:], 0x1D, 0x9A)
+  elif addr == 0x162:
+    ret[0] = _checksum(ret[1:], 0x1D, 0xD1)
 
   return addr, ret, bus
 
@@ -44,6 +57,7 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafe
 
   cnt_speed = 0
   cnt_speed_2 = 0
+  cnt_adas = 0
 
   def _torque_driver_msg(self, torque):
     values = {"EPAS_TorsionBarTorque": torque / 100.0}
@@ -67,8 +81,9 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafe
     values = {"iBESP2_BrakePedalApplied": brake}
     return self.packer.make_can_msg_safety("iBESP2", 0, values)
 
-  def _user_gas_msg(self, gas, speed=0, quality_flag=True):
+  def _user_gas_msg(self, gas, speed=0, quality_flag=True, gear=RIVIAN_PRNDL_DRIVE):
     values = {"VDM_AcceleratorPedalPosition": gas, "VDM_VehicleSpeed": speed * 3.6,
+              "VDM_Prndl_Status": gear,
               "VDM_PropStatus_Counter": self.cnt_speed_2 % 15, "VDM_VehicleSpeedQ": 1 if quality_flag else 0}
     self.__class__.cnt_speed_2 += 1
     return self.packer.make_can_msg_safety("VDM_PropStatus", 0, values, fix_checksum=checksum)
@@ -77,9 +92,106 @@ class TestRivianSafetyBase(common.CarSafetyTest, common.DriverTorqueSteeringSafe
     values = {"ACM_FeatureStatus": enable, "ACM_Unkown1": 1}
     return self.packer.make_can_msg_safety("ACM_Status", 2, values)
 
+  def _adas_status_msg(self, user_adas_request):
+    values = {
+      "VDM_AdasStatus_Counter": self.cnt_adas % 15,
+      "VDM_UserAdasRequest": user_adas_request,
+    }
+    self.__class__.cnt_adas += 1
+    return self.packer.make_can_msg_safety("VDM_AdasSts", 0, values, fix_checksum=checksum)
+
   def _accel_msg(self, accel: float):
     values = {"ACM_AccelerationRequest": accel}
     return self.packer.make_can_msg_safety("ACM_longitudinalRequest", 0, values)
+
+  def _setup_mads_stalk_down(self, speed=0, brake=False, feature_status=RIVIAN_ACM_FEATURE_STATUS_STANDBY,
+                             gear=RIVIAN_PRNDL_DRIVE, enable_mads=True):
+    self.safety.set_mads_params(enable_mads, False, False)
+    self._rx(self._speed_msg(speed))
+    self._rx(self._speed_msg_2(speed))
+    self._rx(self._user_gas_msg(0, speed, gear=gear))
+    self._rx(self._user_brake_msg(brake))
+    self._rx(self._pcm_status_msg(feature_status))
+    self._rx(self._adas_status_msg(RIVIAN_USER_ADAS_REQUEST_IDLE))
+    self.safety.set_controls_allowed(False)
+    self.safety.set_controls_allowed_lateral(False)
+
+  def _stalk_down(self, request=RIVIAN_USER_ADAS_REQUEST_DOWN_2):
+    self._rx(self._adas_status_msg(request))
+
+  def test_single_stalk_down_enables_mads_lateral(self):
+    for request in (RIVIAN_USER_ADAS_REQUEST_DOWN_1, RIVIAN_USER_ADAS_REQUEST_DOWN_2):
+      with self.subTest(request=request):
+        self._setup_mads_stalk_down()
+
+        self._stalk_down(request)
+
+        self.assertTrue(self.safety.get_controls_allowed_lateral())
+
+  def test_non_down_stalk_request_does_not_enable_mads_lateral(self):
+    self._setup_mads_stalk_down()
+
+    self._rx(self._adas_status_msg(RIVIAN_USER_ADAS_REQUEST_UP_1))
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_held_stalk_down_does_not_retrigger_mads_lateral(self):
+    self._setup_mads_stalk_down()
+
+    self._stalk_down()
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.safety.set_controls_allowed_lateral(False)
+    self._stalk_down()
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_with_mads_disabled_does_not_enable_mads_lateral(self):
+    self._setup_mads_stalk_down(enable_mads=False)
+
+    self._stalk_down()
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_with_brake_pressed_does_not_enable_mads_lateral(self):
+    self._setup_mads_stalk_down(brake=True)
+
+    self._stalk_down()
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_with_acc_or_hwp_active_does_not_enable_mads_lateral(self):
+    for feature_status in (RIVIAN_ACM_FEATURE_STATUS_ACC, RIVIAN_ACM_FEATURE_STATUS_HWP):
+      with self.subTest(feature_status=feature_status):
+        self._setup_mads_stalk_down(feature_status=feature_status)
+
+        self._stalk_down()
+
+        self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_out_of_drive_does_not_enable_mads_lateral(self):
+    self._setup_mads_stalk_down(gear=RIVIAN_PRNDL_PARK)
+
+    self._stalk_down()
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_at_acc_speed_does_not_enable_mads_lateral(self):
+    self._setup_mads_stalk_down(speed=RIVIAN_MADS_STALK_DOWN_MAX_SPEED)
+
+    self._stalk_down()
+
+    self.assertFalse(self.safety.get_controls_allowed_lateral())
+
+  def test_stalk_down_after_idle_can_enable_mads_lateral_again(self):
+    self._setup_mads_stalk_down()
+
+    self._stalk_down()
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
+    self.safety.set_controls_allowed_lateral(False)
+    self._rx(self._adas_status_msg(RIVIAN_USER_ADAS_REQUEST_IDLE))
+    self._stalk_down()
+
+    self.assertTrue(self.safety.get_controls_allowed_lateral())
 
   def test_wheel_touch(self):
     # For hiding hold wheel alert on engage
