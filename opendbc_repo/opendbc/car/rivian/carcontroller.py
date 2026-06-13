@@ -18,6 +18,28 @@ BLIP_FRAMES = 2
 # Above this wheel angle the rack is saturated >75% of the time (route data); cap output so the
 # controller can recover from saturation faster when geometry eases
 HIGH_ANGLE_THRESHOLD_DEG = 90
+UNWIND_DAMPING_ANGLE_DEG = 45
+UNWIND_DAMPING_MIN_TORQUE = 0.05
+TORQUE_FILTER_SPEED_BP = [5., 10., 20.]
+TORQUE_FILTER_RC_BP = [0.2, 0.1, 0.0]
+UNWIND_FILTER_SPEED_BP = [5., 10., 15., 20.]
+UNWIND_FILTER_RC_BP = [0.35, 0.25, 0.1, 0.0]
+
+
+def rivian_torque_filter_rc(v_ego_raw, steering_angle_deg, raw_torque, filtered_torque):
+  base_rc = float(np.interp(v_ego_raw, TORQUE_FILTER_SPEED_BP, TORQUE_FILTER_RC_BP))
+  unwind_rc = float(np.interp(v_ego_raw, UNWIND_FILTER_SPEED_BP, UNWIND_FILTER_RC_BP))
+  sign_reversing = raw_torque * filtered_torque < 0.
+  unwinding = abs(raw_torque) < abs(filtered_torque)
+
+  should_damp_unwind = (
+    abs(steering_angle_deg) > UNWIND_DAMPING_ANGLE_DEG and
+    abs(filtered_torque) > UNWIND_DAMPING_MIN_TORQUE and
+    (sign_reversing or unwinding)
+  )
+  if should_damp_unwind:
+    return max(base_rc, unwind_rc)
+  return base_rc
 
 
 class CarController(CarControllerBase, MadsCarController):
@@ -50,7 +72,9 @@ class CarController(CarControllerBase, MadsCarController):
                                       self.tune['steer_max_lookup'][1])))
     if self.mads.lat_active:
       if self.tune['use_torque_filter']:
-        self.torque_filter.update_alpha(float(np.interp(CS.out.vEgoRaw, [5., 10., 20.], [0.2, 0.1, 0.0])))
+        self.torque_filter.update_alpha(rivian_torque_filter_rc(
+          CS.out.vEgoRaw, CS.out.steeringAngleDeg, CC.actuators.torque, self.torque_filter.x
+        ))
         desired_torque = self.torque_filter.update(CC.actuators.torque)
       else:
         desired_torque = CC.actuators.torque

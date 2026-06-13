@@ -2,6 +2,7 @@ import unittest
 import math
 
 from opendbc.car import gen_empty_fingerprint
+from opendbc.car.rivian.carcontroller import rivian_torque_filter_rc
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
 from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear, RivianFlags, RivianSafetyFlags, RIVIAN_TUNE, platform_from_vin
 from opendbc.car.car_helpers import interfaces
@@ -91,3 +92,17 @@ class TestRivian(unittest.TestCase):
     assert RIVIAN_TUNE[True]['high_angle_cap_frac'] == 1.0
     assert RIVIAN_TUNE[False]['steer_max_lookup'] == ([9, 13, 25, 27], [385, 350, 295, 275])
     assert RIVIAN_TUNE[False]['high_angle_cap_frac'] == 0.95
+
+  def test_aggressive_torque_filter_unwind_damping(self):
+    cases = (
+      ("turn_in_high_angle", 10., 70., 0.4, 0.2, 0.1),
+      ("same_sign_unwind_high_angle", 10., 70., 0.1, 0.3, 0.25),
+      ("sign_reversal_high_angle", 10., 70., -0.1, 0.3, 0.25),
+      ("low_angle_unwind", 10., 20., 0.1, 0.3, 0.1),
+      ("near_zero_filtered_torque", 10., 70., 0., 0.04, 0.1),
+      ("high_speed_unwind", 20., 70., 0., 0.3, 0.0),
+    )
+    for name, v_ego_raw, steering_angle_deg, raw_torque, filtered_torque, expected_rc in cases:
+      with self.subTest(name=name):
+        rc = rivian_torque_filter_rc(v_ego_raw, steering_angle_deg, raw_torque, filtered_torque)
+        assert math.isclose(rc, expected_rc, rel_tol=0, abs_tol=1e-6)
