@@ -61,7 +61,7 @@ class TestRivian(unittest.TestCase):
       assert matches == {platform}
 
   def test_r1s_r1t_geometry_and_torque_params(self):
-    for platform, wheelbase, friction in ((CAR.RIVIAN_R1S, 3.08, 0.07), (CAR.RIVIAN_R1T, 3.449, 0.08)):
+    for platform, wheelbase, friction in ((CAR.RIVIAN_R1S, 3.08, 0.07), (CAR.RIVIAN_R1T, 3.449, 0.10)):
       CP = interfaces[platform].get_non_essential_params(platform)
       assert math.isclose(CP.wheelbase, wheelbase, rel_tol=0, abs_tol=1e-6)
       assert math.isclose(CP.lateralTuning.torque.latAccelFactor, 2.8, rel_tol=0, abs_tol=1e-6)
@@ -86,8 +86,8 @@ class TestRivian(unittest.TestCase):
     assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.AGGRESSIVE_TUNE.value
     assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.LONG_CONTROL.value
 
-  def test_aggressive_tune_keeps_highway_points_unchanged(self):
-    assert RIVIAN_TUNE[True]['steer_max_lookup'] == ([9, 13, 25, 27], [460, 440, 325, 305])
+  def test_aggressive_tune_is_low_speed_only(self):
+    assert RIVIAN_TUNE[True]['steer_max_lookup'] == ([9, 13, 25, 27], [460, 350, 295, 275])
     assert RIVIAN_TUNE[True]['high_angle_cap_frac'] == 1.0
     assert RIVIAN_TUNE[False]['steer_max_lookup'] == ([9, 13, 25, 27], [385, 350, 295, 275])
     assert RIVIAN_TUNE[False]['high_angle_cap_frac'] == 0.95

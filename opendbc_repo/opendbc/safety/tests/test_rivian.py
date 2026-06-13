@@ -263,9 +263,14 @@ class TestRivianStockSafety(TestRivianSafetyBase):
     self.assertFalse(self._tx(self._torque_cmd_msg(461)))
 
     self._reset_speed_measurement(26)
-    self._set_prev_torque(325)
-    self.assertTrue(self._tx(self._torque_cmd_msg(325)))
-    self.assertFalse(self._tx(self._torque_cmd_msg(327)))
+    self._set_prev_torque(296)
+    self.assertTrue(self._tx(self._torque_cmd_msg(296)))
+    self.assertFalse(self._tx(self._torque_cmd_msg(297)))
+
+    self._reset_speed_measurement(28)
+    self._set_prev_torque(276)
+    self.assertTrue(self._tx(self._torque_cmd_msg(276)))
+    self.assertFalse(self._tx(self._torque_cmd_msg(277)))
 
   def test_aggressive_torque_rates(self):
     self._set_aggressive_safety_hooks()

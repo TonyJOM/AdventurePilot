@@ -172,11 +172,11 @@ static bool rivian_tx_hook(const CANPacket_t *msg) {
     .max_torque = 460,
     .dynamic_max_torque = true,
     // 3-point envelope around the aggressive carcontroller lookup
-    // ([9,13,25,27]->[460,440,325,305]). Panda lookup_t is fixed at
+    // ([9,13,25,27]->[460,350,295,275]). Panda lookup_t is fixed at
     // 3 x/y elements, so this curve stays >= software at every speed.
     .max_torque_lookup = {
-      {13., 25., 27.},
-      {460, 325, 305},
+      {9., 25., 27.},
+      {460, 295, 275},
     },
     .max_rate_up = 4,
     .max_rate_down = 5,
