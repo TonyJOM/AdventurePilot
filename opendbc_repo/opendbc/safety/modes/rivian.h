@@ -169,14 +169,14 @@ static bool rivian_tx_hook(const CANPacket_t *msg) {
   };
 
   const TorqueSteeringLimits RIVIAN_AGGRESSIVE_STEERING_LIMITS = {
-    .max_torque = 440,
+    .max_torque = 460,
     .dynamic_max_torque = true,
     // 3-point envelope around the aggressive carcontroller lookup
-    // ([9,13,25,27]->[440,420,325,305]). Panda lookup_t is fixed at
+    // ([9,13,25,27]->[460,440,325,305]). Panda lookup_t is fixed at
     // 3 x/y elements, so this curve stays >= software at every speed.
     .max_torque_lookup = {
       {13., 25., 27.},
-      {440, 325, 305},
+      {460, 325, 305},
     },
     .max_rate_up = 4,
     .max_rate_down = 7,

@@ -3,7 +3,7 @@ import math
 
 from opendbc.car import gen_empty_fingerprint
 from opendbc.car.rivian.fingerprints import FW_VERSIONS
-from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear, RivianFlags, RivianSafetyFlags, platform_from_vin
+from opendbc.car.rivian.values import CAR, FW_QUERY_CONFIG, WMI, ModelLine, ModelYear, RivianFlags, RivianSafetyFlags, RIVIAN_TUNE, platform_from_vin
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.fw_versions import match_fw_to_car
 from opendbc.car.structs import CarParams
@@ -85,3 +85,9 @@ class TestRivian(unittest.TestCase):
     CP = interfaces[CAR.RIVIAN_R1T].get_params(CAR.RIVIAN_R1T, make_fingerprint(), list(), True, False, False)
     assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.AGGRESSIVE_TUNE.value
     assert CP.safetyConfigs[0].safetyParam & RivianSafetyFlags.LONG_CONTROL.value
+
+  def test_aggressive_tune_keeps_highway_points_unchanged(self):
+    assert RIVIAN_TUNE[True]['steer_max_lookup'] == ([9, 13, 25, 27], [460, 440, 325, 305])
+    assert RIVIAN_TUNE[True]['high_angle_cap_frac'] == 1.0
+    assert RIVIAN_TUNE[False]['steer_max_lookup'] == ([9, 13, 25, 27], [385, 350, 295, 275])
+    assert RIVIAN_TUNE[False]['high_angle_cap_frac'] == 0.95

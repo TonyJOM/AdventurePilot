@@ -18,7 +18,6 @@ BLIP_FRAMES = 2
 # Above this wheel angle the rack is saturated >75% of the time (route data); cap output so the
 # controller can recover from saturation faster when geometry eases
 HIGH_ANGLE_THRESHOLD_DEG = 90
-HIGH_ANGLE_CAP_FRAC = 0.95
 
 
 class CarController(CarControllerBase, MadsCarController):
@@ -59,7 +58,7 @@ class CarController(CarControllerBase, MadsCarController):
       apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last,
                                                       CS.out.steeringTorque, self.torque_limits, steer_max)
       if abs(CS.out.steeringAngleDeg) > HIGH_ANGLE_THRESHOLD_DEG:
-        cap = int(round(steer_max * HIGH_ANGLE_CAP_FRAC))
+        cap = int(round(steer_max * self.tune['high_angle_cap_frac']))
         apply_torque = max(-cap, min(cap, apply_torque))
     else:
       self.torque_filter.x = 0.0
