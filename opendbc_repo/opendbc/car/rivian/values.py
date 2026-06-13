@@ -179,7 +179,7 @@ RIVIAN_TUNE = {
   True: {
     'steer_max_lookup': ([9, 13, 25, 27], [460, 440, 325, 305]),
     'steer_delta_up': 4,
-    'steer_delta_down': 7,
+    'steer_delta_down': 5,
     'high_angle_cap_frac': 1.0,
     'use_torque_filter': True,
   },

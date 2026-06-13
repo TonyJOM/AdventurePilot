@@ -61,7 +61,7 @@ class TestRivian(unittest.TestCase):
       assert matches == {platform}
 
   def test_r1s_r1t_geometry_and_torque_params(self):
-    for platform, wheelbase, friction in ((CAR.RIVIAN_R1S, 3.08, 0.07), (CAR.RIVIAN_R1T, 3.449, 0.10)):
+    for platform, wheelbase, friction in ((CAR.RIVIAN_R1S, 3.08, 0.07), (CAR.RIVIAN_R1T, 3.449, 0.08)):
       CP = interfaces[platform].get_non_essential_params(platform)
       assert math.isclose(CP.wheelbase, wheelbase, rel_tol=0, abs_tol=1e-6)
       assert math.isclose(CP.lateralTuning.torque.latAccelFactor, 2.8, rel_tol=0, abs_tol=1e-6)

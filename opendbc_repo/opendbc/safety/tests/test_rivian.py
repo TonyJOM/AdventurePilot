@@ -279,10 +279,10 @@ class TestRivianStockSafety(TestRivianSafetyBase):
     self._reset_speed_measurement(9)
     self._set_prev_torque(460)
     self._reset_torque_driver_measurement(-321)
-    self.assertTrue(self._tx(self._torque_cmd_msg(453)))
+    self.assertTrue(self._tx(self._torque_cmd_msg(455)))
     self._set_prev_torque(460)
     self._reset_torque_driver_measurement(-321)
-    self.assertFalse(self._tx(self._torque_cmd_msg(454)))
+    self.assertFalse(self._tx(self._torque_cmd_msg(456)))
 
 
 class TestRivianLongitudinalSafety(TestRivianSafetyBase):
