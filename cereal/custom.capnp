@@ -478,7 +478,14 @@ struct ModelDataV2SP @0xa1680744031fdb2d {
   }
 }
 
-struct CustomReserved10 @0xcb9fd56c7057593a {
+struct UiSetSpeedControl @0xcb9fd56c7057593a {
+  action @0 :Action;
+
+  enum Action {
+    none @0;
+    increase @1;
+    decrease @2;
+  }
 }
 
 struct CustomReserved11 @0xc2243c65e0340384 {

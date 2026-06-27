@@ -7,6 +7,8 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.widgets.ssh_key import SshKeyFetcher
+from opendbc.car.rivian.values import RivianFlags
+from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 
 class DeveloperLayoutMici(NavScroller):
@@ -67,6 +69,9 @@ class DeveloperLayoutMici(NavScroller):
     self._alpha_long_toggle = BigToggle("alpha longitudinal",
                                         initial_state=ui_state.params.get_bool("AlphaLongitudinalEnabled"),
                                         toggle_callback=self._on_alpha_long_enabled)
+    self._rivian_no_harness_long_toggle = BigToggle("rivian no-harness long",
+                                                    initial_state=ui_state.params.get_bool("RivianNoHarnessAlphaLong"),
+                                                    toggle_callback=self._on_rivian_no_harness_long_enabled)
     self._debug_mode_toggle = BigParamControl("ui debug mode", "ShowDebugInfo",
                                               toggle_callback=lambda checked: (gui_app.set_show_touches(checked),
                                                                                gui_app.set_show_fps(checked)))
@@ -85,6 +90,7 @@ class DeveloperLayoutMici(NavScroller):
       self._joystick_toggle,
       self._long_maneuver_toggle,
       self._lat_maneuver_toggle,
+      self._rivian_no_harness_long_toggle,
       self._alpha_long_toggle,
       self._debug_mode_toggle,
       self._rivian_tune_toggle,
@@ -97,14 +103,17 @@ class DeveloperLayoutMici(NavScroller):
       ("JoystickDebugMode", self._joystick_toggle),
       ("LongitudinalManeuverMode", self._long_maneuver_toggle),
       ("LateralManeuverMode", self._lat_maneuver_toggle),
+      ("RivianNoHarnessAlphaLong", self._rivian_no_harness_long_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
     )
     # NOTE: _rivian_tune_toggle is a BigMultiParamToggle (manages its own int param), so it's not in
     # _refresh_toggles (that loop does set_checked/get_bool, which is boolean-only).
     onroad_blocked_toggles = (self._adb_toggle, self._joystick_toggle)
-    release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle)
-    engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle, self._alpha_long_toggle, self._rivian_tune_toggle)
+    release_blocked_toggles = (self._joystick_toggle, self._long_maneuver_toggle, self._lat_maneuver_toggle,
+                               self._rivian_no_harness_long_toggle, self._alpha_long_toggle)
+    engaged_blocked_toggles = (self._long_maneuver_toggle, self._lat_maneuver_toggle,
+                               self._rivian_no_harness_long_toggle, self._alpha_long_toggle, self._rivian_tune_toggle)
 
     # Hide non-release toggles on release builds
     for item in release_blocked_toggles:
@@ -145,6 +154,7 @@ class DeveloperLayoutMici(NavScroller):
     # CP gating
     if ui_state.CP is not None:
       alpha_avail = ui_state.CP.alphaLongitudinalAvailable
+      self._rivian_no_harness_long_toggle.set_visible(self._rivian_no_harness_long_available() and not ui_state.is_release)
       if not alpha_avail or ui_state.is_release:
         self._alpha_long_toggle.set_visible(False)
         ui_state.params.remove("AlphaLongitudinalEnabled")
@@ -162,6 +172,7 @@ class DeveloperLayoutMici(NavScroller):
     else:
       self._long_maneuver_toggle.set_enabled(False)
       self._lat_maneuver_toggle.set_enabled(False)
+      self._rivian_no_harness_long_toggle.set_visible(False)
       self._alpha_long_toggle.set_visible(False)
 
     # Refresh toggles from params to mirror external changes
@@ -201,7 +212,22 @@ class DeveloperLayoutMici(NavScroller):
     restart_needed_callback(state)
     self._update_toggles()
 
+  def _on_rivian_no_harness_long_enabled(self, state: bool):
+    ui_state.params.put_bool("RivianNoHarnessAlphaLong", state)
+    ui_state.params.put_bool("AlphaLongitudinalEnabled", False)
+    ui_state.params.put_bool("ExperimentalMode", False)
+    self._alpha_long_toggle.set_checked(False)
+    restart_needed_callback(True)
+    self._update_toggles()
+
   def _on_rivian_tune(self, value: str):
     # The widget writes the param itself (int index 0=auto/1=tame). Any tune change
     # needs a car re-init to take effect, so always flag a restart.
     restart_needed_callback(True)
+
+  def _rivian_no_harness_long_available(self) -> bool:
+    if ui_state.CP is None or ui_state.CP_SP is None:
+      return False
+    if ui_state.CP.brand != "rivian" or ui_state.CP.flags & RivianFlags.GEN2.value:
+      return False
+    return not bool(ui_state.CP_SP.flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value)

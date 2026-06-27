@@ -13,3 +13,4 @@ class RivianFlagsSP(IntFlag):
   # rate up/down) vs the tame ap-dev baseline. Set at car init from the "RivianAggressiveTune"
   # param; read by the carcontroller to pick a RIVIAN_TUNE profile (opendbc/car/rivian/values.py).
   AGGRESSIVE_TUNE = 2
+  NO_HARNESS_ALPHA_LONG = 4

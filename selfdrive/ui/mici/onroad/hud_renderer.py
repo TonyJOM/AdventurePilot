@@ -1,14 +1,16 @@
 import pyray as rl
+import cereal.messaging as messaging
 from dataclasses import dataclass
 from openpilot.common.constants import CV
 from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
-from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.application import gui_app, FontWeight, MouseEvent, MousePos
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
 from openpilot.common.filter_simple import FirstOrderFilter
 from cereal import log
+from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 EventName = log.OnroadEvent.EventName
 
@@ -18,6 +20,12 @@ KM_TO_MILE = 0.621371
 CRUISE_DISABLED_CHAR = '–'
 
 SET_SPEED_PERSISTENCE = 2.5  # seconds
+SET_SPEED_BUTTON_SIZE = 72
+SET_SPEED_BUTTON_GAP = 14
+SET_SPEED_BUTTON_REPEAT_DELAY = 0.45
+SET_SPEED_BUTTON_REPEAT_INTERVAL = 0.16
+SET_SPEED_ACTION_INCREASE = "increase"
+SET_SPEED_ACTION_DECREASE = "decrease"
 
 
 @dataclass(frozen=True)
@@ -126,6 +134,15 @@ class HudRenderer(Widget):
     self._wheel_y_filter = FirstOrderFilter(0, 0.1, 1 / gui_app.target_fps)
 
     self._set_speed_alpha_filter = FirstOrderFilter(0.0, 0.1, 1 / gui_app.target_fps)
+    self._pm = messaging.PubMaster(['uiSetSpeedControl'])
+    self._speed_button_rects = {
+      SET_SPEED_ACTION_INCREASE: rl.Rectangle(0, 0, 0, 0),
+      SET_SPEED_ACTION_DECREASE: rl.Rectangle(0, 0, 0, 0),
+    }
+    self._pressed_speed_action: str | None = None
+    self._speed_button_press_time: float = 0.0
+    self._speed_button_last_send_time: float = 0.0
+    self._interacting = False
 
   def set_wheel_critical_icon(self, critical: bool):
     """Set the wheel icon to critical or normal state."""
@@ -137,7 +154,11 @@ class HudRenderer(Widget):
 
   def drawing_top_icons(self) -> bool:
     # whether we're drawing any top icons currently
-    return bool(self._set_speed_alpha_filter.x > 1e-2)
+    return bool(self._set_speed_alpha_filter.x > 1e-2 or self._speed_buttons_visible())
+
+  def interacting(self) -> bool:
+    interacting, self._interacting = self._interacting, False
+    return interacting
 
   def _update_state(self) -> None:
     """Update HUD state based on car state and controls state."""
@@ -178,6 +199,9 @@ class HudRenderer(Widget):
       self._draw_set_speed(rect)
 
     self._draw_steering_wheel(rect)
+
+    if self._speed_buttons_visible():
+      self._draw_speed_buttons(rect)
 
   def _draw_steering_wheel(self, rect: rl.Rectangle) -> None:
     wheel_txt = self._txt_wheel_critical if self._show_wheel_critical else self._txt_wheel
@@ -225,8 +249,8 @@ class HudRenderer(Widget):
 
   def _draw_set_speed(self, rect: rl.Rectangle) -> None:
     """Draw the MAX speed indicator box."""
-    alpha = self._set_speed_alpha_filter.update(0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and
-                                                self._can_draw_top_icons and self._engaged)
+    alpha = self._set_speed_alpha_filter.update(((0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE) or
+                                                 self._speed_buttons_visible()) and self._can_draw_top_icons and self._engaged)
     if alpha < 1e-2:
       return
 
@@ -264,6 +288,90 @@ class HudRenderer(Widget):
       0,
       max_color,
     )
+
+  def _speed_buttons_visible(self) -> bool:
+    cp = ui_state.CP
+    cp_sp = ui_state.CP_SP
+    if cp is None or cp_sp is None or not self._engaged or not self._can_draw_top_icons:
+      return False
+
+    flags = int(cp_sp.flags)
+    return (cp.brand == "rivian" and cp.openpilotLongitudinalControl and
+            bool(flags & RivianFlagsSP.NO_HARNESS_ALPHA_LONG.value) and
+            not bool(flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value))
+
+  def _update_speed_button_rects(self, rect: rl.Rectangle) -> None:
+    button_x = rect.x + 168
+    button_y = rect.y + 10
+    self._speed_button_rects[SET_SPEED_ACTION_INCREASE] = rl.Rectangle(button_x, button_y,
+                                                                       SET_SPEED_BUTTON_SIZE, SET_SPEED_BUTTON_SIZE)
+    self._speed_button_rects[SET_SPEED_ACTION_DECREASE] = rl.Rectangle(button_x, button_y + SET_SPEED_BUTTON_SIZE + SET_SPEED_BUTTON_GAP,
+                                                                       SET_SPEED_BUTTON_SIZE, SET_SPEED_BUTTON_SIZE)
+
+  def _draw_speed_buttons(self, rect: rl.Rectangle) -> None:
+    self._update_speed_button_rects(rect)
+    alpha = int(255 * 0.88 * max(self._set_speed_alpha_filter.x, 0.65))
+
+    for action, label in ((SET_SPEED_ACTION_INCREASE, "+"), (SET_SPEED_ACTION_DECREASE, "-")):
+      button_rect = self._speed_button_rects[action]
+      pressed = self._pressed_speed_action == action
+      center_x = int(button_rect.x + button_rect.width / 2)
+      center_y = int(button_rect.y + button_rect.height / 2)
+      radius = int(button_rect.width / 2)
+
+      bg_alpha = int(alpha * (0.78 if pressed else 0.52))
+      rl.draw_circle(center_x, center_y, radius, rl.Color(0, 0, 0, bg_alpha))
+      rl.draw_circle_lines(center_x, center_y, radius, rl.Color(255, 255, 255, int(alpha * 0.72)))
+
+      font_size = 64
+      text_size = measure_text_cached(self._font_display, label, font_size)
+      text_pos = rl.Vector2(center_x - text_size.x / 2, center_y - text_size.y / 2 - (3 if label == "+" else 7))
+      rl.draw_text_ex(self._font_display, label, text_pos, font_size, 0, rl.Color(255, 255, 255, alpha))
+
+  def _speed_action_for_pos(self, pos: MousePos) -> str | None:
+    if not self._speed_buttons_visible():
+      return None
+
+    for action, button_rect in self._speed_button_rects.items():
+      if rl.check_collision_point_rec(pos, button_rect):
+        return action
+    return None
+
+  def _publish_speed_action(self, action: str) -> None:
+    msg = messaging.new_message('uiSetSpeedControl')
+    msg.valid = True
+    msg.uiSetSpeedControl.action = action
+    self._pm.send('uiSetSpeedControl', msg)
+    self._set_speed_changed_time = rl.get_time()
+
+  def _handle_mouse_press(self, mouse_pos: MousePos) -> None:
+    action = self._speed_action_for_pos(mouse_pos)
+    if action is None:
+      return
+
+    self._interacting = True
+    self._pressed_speed_action = action
+    self._speed_button_press_time = rl.get_time()
+    self._speed_button_last_send_time = self._speed_button_press_time
+    self._publish_speed_action(action)
+
+  def _handle_mouse_event(self, mouse_event: MouseEvent) -> None:
+    if self._pressed_speed_action is None or not mouse_event.left_down:
+      return
+
+    now = rl.get_time()
+    if (now - self._speed_button_press_time >= SET_SPEED_BUTTON_REPEAT_DELAY and
+        now - self._speed_button_last_send_time >= SET_SPEED_BUTTON_REPEAT_INTERVAL):
+      self._speed_button_last_send_time = now
+      self._publish_speed_action(self._pressed_speed_action)
+
+  def _handle_mouse_release(self, mouse_pos: MousePos) -> None:
+    if self._pressed_speed_action is not None:
+      self._interacting = True
+      self._pressed_speed_action = None
+      return
+
+    super()._handle_mouse_release(mouse_pos)
 
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:
     """Draw the current vehicle speed and unit."""

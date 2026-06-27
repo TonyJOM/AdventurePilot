@@ -128,6 +128,13 @@ def initialize_params(params) -> list[dict[str, Any]]:
     "TeslaCoopSteering",
   ])
 
+  # rivian
+  keys.extend([
+    "AlphaLongitudinalEnabled",
+    "RivianAggressiveTune",
+    "RivianNoHarnessAlphaLong",
+  ])
+
   # toyota
   keys.extend([
     "ToyotaEnforceStockLongitudinal",

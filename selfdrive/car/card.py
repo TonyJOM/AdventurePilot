@@ -23,6 +23,11 @@ from openpilot.selfdrive.car.helpers import convert_carControlSP, convert_to_cap
 
 from openpilot.sunnypilot.mads.helpers import set_alternative_experience, set_car_specific_params
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
+from openpilot.selfdrive.car.rivian_no_harness_long import (
+  adjust_rivian_no_harness_set_speed,
+  clip_rivian_no_harness_set_speed,
+  rivian_no_harness_long_active,
+)
 
 REPLAY = "REPLAY" in os.environ
 
@@ -70,7 +75,7 @@ class Car:
 
   def __init__(self, CI=None, RI=None) -> None:
     self.can_sock = messaging.sub_sock('can', timeout=20)
-    self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents'] + ['carControlSP', 'longitudinalPlanSP'])
+    self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents', 'uiSetSpeedControl'] + ['carControlSP', 'longitudinalPlanSP'])
     self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'liveTracks'] + ['carParamsSP', 'carStateSP'])
 
     self.can_rcv_cum_timeout_counter = 0
@@ -81,6 +86,8 @@ class Car:
     self.initialized_prev = False
 
     self.last_actuators_output = structs.CarControl.Actuators()
+    self.rivian_no_harness_set_speed_ms = 0.0
+    self.rivian_no_harness_cruise_enabled_prev = False
 
     self.params = Params()
 
@@ -212,6 +219,7 @@ class Car:
     if can_rcv_valid and REPLAY:
       self.can_log_mono_time = messaging.log_from_bytes(can_strs[0]).logMonoTime
 
+    self._update_rivian_no_harness_set_speed(CS)
     self.v_cruise_helper.update_speed_limit_assist(self.is_metric, self.sm['longitudinalPlanSP'])
     self.v_cruise_helper.update_v_cruise(CS, self.sm['carControl'].enabled, self.is_metric)
     if self.sm['carControl'].enabled and not self.CC_prev.enabled:
@@ -308,6 +316,31 @@ class Car:
       self.v_cruise_helper.read_custom_set_speed_params()
 
       time.sleep(0.1)
+
+  def _update_rivian_no_harness_set_speed(self, CS: car.CarState) -> None:
+    if not rivian_no_harness_long_active(self.CP, self.CP_SP):
+      self.rivian_no_harness_set_speed_ms = 0.0
+      self.rivian_no_harness_cruise_enabled_prev = False
+      return
+
+    cruise_enabled = bool(CS.cruiseState.enabled)
+    v_ego = CS.vEgoCluster if CS.vEgoCluster > 0.0 else CS.vEgo
+
+    if cruise_enabled and not self.rivian_no_harness_cruise_enabled_prev:
+      self.rivian_no_harness_set_speed_ms = clip_rivian_no_harness_set_speed(v_ego)
+    elif not cruise_enabled:
+      self.rivian_no_harness_set_speed_ms = clip_rivian_no_harness_set_speed(v_ego)
+
+    if cruise_enabled and self.sm.updated['uiSetSpeedControl']:
+      action = self.sm['uiSetSpeedControl'].action
+      self.rivian_no_harness_set_speed_ms = adjust_rivian_no_harness_set_speed(self.rivian_no_harness_set_speed_ms,
+                                                                               action, self.is_metric)
+
+    if cruise_enabled:
+      CS.cruiseState.speed = self.rivian_no_harness_set_speed_ms
+      CS.cruiseState.speedCluster = self.rivian_no_harness_set_speed_ms
+
+    self.rivian_no_harness_cruise_enabled_prev = cruise_enabled
 
   def card_thread(self):
     e = threading.Event()

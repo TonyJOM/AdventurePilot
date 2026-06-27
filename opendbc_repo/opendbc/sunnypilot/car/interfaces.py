@@ -12,7 +12,7 @@ from collections.abc import Callable
 from opendbc.car import structs
 from opendbc.car.can_definitions import CanRecvCallable, CanSendCallable
 from opendbc.car.hyundai.values import HyundaiFlags
-from opendbc.car.rivian.values import RivianFlags, CAR as RIVIAN_CAR
+from opendbc.car.rivian.values import RivianFlags, RivianSafetyFlags, CAR as RIVIAN_CAR
 from opendbc.car.subaru.values import SubaruFlags
 from opendbc.car.toyota.values import ToyotaSafetyFlags
 from opendbc.sunnypilot.car.hyundai.enable_radar_tracks import enable_radar_tracks as hyundai_enable_radar_tracks
@@ -130,12 +130,27 @@ def _initialize_rivian(CP: structs.CarParams, CP_SP: structs.CarParamsSP,
   aggressive = is_r1t and is_gen1
 
   # Manual override (RivianAggressiveTune, INT): 0 = auto, 1 = force tame.
-  override = int(params_dict.get("RivianAggressiveTune", 0))
+  override = int(params_dict.get("RivianAggressiveTune") or 0)
   if override == 1:
     aggressive = False
 
   if aggressive:
     CP_SP.flags |= RivianFlagsSP.AGGRESSIVE_TUNE.value
+
+  no_harness_alpha_long = int(params_dict.get("RivianNoHarnessAlphaLong") or 0) == 1
+  alpha_long_enabled = int(params_dict.get("AlphaLongitudinalEnabled") or 0) == 1
+  has_long_harness = bool(CP_SP.flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value)
+
+  if no_harness_alpha_long and is_gen1 and not has_long_harness:
+    CP_SP.flags |= RivianFlagsSP.NO_HARNESS_ALPHA_LONG.value
+    CP.alphaLongitudinalAvailable = True
+    CP.radarUnavailable = True
+    CP.enableBsm = False
+
+    if alpha_long_enabled:
+      CP.openpilotLongitudinalControl = True
+      if CP.safetyConfigs:
+        CP.safetyConfigs[0].safetyParam |= RivianSafetyFlags.LONG_CONTROL.value
 
 
 def _initialize_radar_tracks(CP: structs.CarParams, CP_SP: structs.CarParamsSP,

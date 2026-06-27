@@ -29,11 +29,7 @@ class CarInterface(CarInterfaceBase):
     ret.steerControlType = structs.CarParams.SteerControlType.torque
     ret.radarUnavailable = True
 
-    # TODO: pending finding/handling missing set speed
     ret.alphaLongitudinalAvailable = False
-    if alpha_long:
-      ret.openpilotLongitudinalControl = True
-      ret.safetyConfigs[0].safetyParam |= RivianSafetyFlags.LONG_CONTROL.value
 
     # Measured command->aEgo lag ~0.25s (route 00000028, xcorr); was 0.1 = under-modeled, so the
     # planner under-anticipates the VDM. 0.2 tightens anticipation (smoother) while staying well under
