@@ -20,8 +20,12 @@ KM_TO_MILE = 0.621371
 CRUISE_DISABLED_CHAR = '–'
 
 SET_SPEED_PERSISTENCE = 2.5  # seconds
-SET_SPEED_BUTTON_SIZE = 72
+SET_SPEED_BUTTON_SIZE = 92
 SET_SPEED_BUTTON_GAP = 14
+SET_SPEED_BUTTON_LEFT_MARGIN = 4
+SET_SPEED_BUTTON_TOP_MARGIN = 6
+SET_SPEED_BUTTON_SET_SPEED_GAP = 20
+SET_SPEED_BUTTON_FONT_SIZE = 78
 SET_SPEED_BUTTON_REPEAT_DELAY = 0.45
 SET_SPEED_BUTTON_REPEAT_INTERVAL = 0.16
 SET_SPEED_ACTION_INCREASE = "increase"
@@ -254,7 +258,7 @@ class HudRenderer(Widget):
     if alpha < 1e-2:
       return
 
-    x = rect.x
+    x = self._set_speed_x(rect)
     y = rect.y
 
     # draw drop shadow
@@ -300,9 +304,14 @@ class HudRenderer(Widget):
             bool(flags & RivianFlagsSP.NO_HARNESS_ALPHA_LONG.value) and
             not bool(flags & RivianFlagsSP.LONGITUDINAL_HARNESS_UPGRADE.value))
 
+  def _set_speed_x(self, rect: rl.Rectangle) -> float:
+    if self._speed_buttons_visible():
+      return rect.x + SET_SPEED_BUTTON_LEFT_MARGIN + SET_SPEED_BUTTON_SIZE + SET_SPEED_BUTTON_SET_SPEED_GAP
+    return rect.x
+
   def _update_speed_button_rects(self, rect: rl.Rectangle) -> None:
-    button_x = rect.x + 168
-    button_y = rect.y + 10
+    button_x = rect.x + SET_SPEED_BUTTON_LEFT_MARGIN
+    button_y = rect.y + SET_SPEED_BUTTON_TOP_MARGIN
     self._speed_button_rects[SET_SPEED_ACTION_INCREASE] = rl.Rectangle(button_x, button_y,
                                                                        SET_SPEED_BUTTON_SIZE, SET_SPEED_BUTTON_SIZE)
     self._speed_button_rects[SET_SPEED_ACTION_DECREASE] = rl.Rectangle(button_x, button_y + SET_SPEED_BUTTON_SIZE + SET_SPEED_BUTTON_GAP,
@@ -323,10 +332,9 @@ class HudRenderer(Widget):
       rl.draw_circle(center_x, center_y, radius, rl.Color(0, 0, 0, bg_alpha))
       rl.draw_circle_lines(center_x, center_y, radius, rl.Color(255, 255, 255, int(alpha * 0.72)))
 
-      font_size = 64
-      text_size = measure_text_cached(self._font_display, label, font_size)
+      text_size = measure_text_cached(self._font_display, label, SET_SPEED_BUTTON_FONT_SIZE)
       text_pos = rl.Vector2(center_x - text_size.x / 2, center_y - text_size.y / 2 - (3 if label == "+" else 7))
-      rl.draw_text_ex(self._font_display, label, text_pos, font_size, 0, rl.Color(255, 255, 255, alpha))
+      rl.draw_text_ex(self._font_display, label, text_pos, SET_SPEED_BUTTON_FONT_SIZE, 0, rl.Color(255, 255, 255, alpha))
 
   def _speed_action_for_pos(self, pos: MousePos) -> str | None:
     if not self._speed_buttons_visible():
