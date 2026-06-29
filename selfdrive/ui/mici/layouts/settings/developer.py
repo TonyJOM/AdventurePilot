@@ -1,3 +1,7 @@
+import os
+import socket
+
+from openpilot.common.basedir import BASEDIR
 from openpilot.common.time_helpers import system_time_valid
 from openpilot.system.ui.widgets.scroller import NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigCircleParamControl, BigMultiParamToggle
@@ -9,6 +13,24 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.widgets.ssh_key import SshKeyFetcher
 from opendbc.car.rivian.values import RivianFlags
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
+
+AP_VISUALIZER_PORT = 8077
+AP_VISUALIZER_URL = f"http://ap-visualizer.local:{AP_VISUALIZER_PORT}"
+AP_VISUALIZER_ROOT = os.path.join(BASEDIR, "ap_visualizer_repo")
+
+
+def ap_visualizer_installed() -> bool:
+  return os.path.exists(os.path.join(AP_VISUALIZER_ROOT, "ap_visualizer", "server.py")) and \
+         os.path.exists(os.path.join(AP_VISUALIZER_ROOT, "dist", "index.html"))
+
+
+def ap_visualizer_fallback_url() -> str:
+  try:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+      sock.connect(("8.8.8.8", 80))
+      return f"http://{sock.getsockname()[0]}:{AP_VISUALIZER_PORT}"
+  except OSError:
+    return ""
 
 
 class DeveloperLayoutMici(NavScroller):
@@ -81,6 +103,12 @@ class DeveloperLayoutMici(NavScroller):
     self._rivian_tune_toggle = BigMultiParamToggle("steering tune", "RivianAggressiveTune",
                                                    ["auto", "tame"],
                                                    select_callback=self._on_rivian_tune)
+    self._ap_visualizer_toggle = BigToggle("AP Visualizer", f"port {AP_VISUALIZER_PORT}",
+                                           initial_state=ui_state.params.get_bool("APVisualizerEnabled"),
+                                           toggle_callback=self._on_ap_visualizer_enabled)
+    self._ap_visualizer_details_btn = BigButton("AP Visualizer details", "", scroll=True)
+    self._ap_visualizer_details_btn.set_click_callback(self._open_ap_visualizer_details)
+    self._update_ap_visualizer_value()
 
     self._scroller.add_widgets([
       self._adb_toggle,
@@ -94,6 +122,8 @@ class DeveloperLayoutMici(NavScroller):
       self._alpha_long_toggle,
       self._debug_mode_toggle,
       self._rivian_tune_toggle,
+      self._ap_visualizer_toggle,
+      self._ap_visualizer_details_btn,
     ])
 
     # Toggle lists
@@ -106,6 +136,7 @@ class DeveloperLayoutMici(NavScroller):
       ("RivianNoHarnessAlphaLong", self._rivian_no_harness_long_toggle),
       ("AlphaLongitudinalEnabled", self._alpha_long_toggle),
       ("ShowDebugInfo", self._debug_mode_toggle),
+      ("APVisualizerEnabled", self._ap_visualizer_toggle),
     )
     # NOTE: _rivian_tune_toggle is a BigMultiParamToggle (manages its own int param), so it's not in
     # _refresh_toggles (that loop does set_checked/get_bool, which is boolean-only).
@@ -143,6 +174,7 @@ class DeveloperLayoutMici(NavScroller):
     target = ui_state.params.get("UpdaterTargetBranch") or ""
     if self._branch_btn.get_value() != target:
       self._branch_btn.set_value(target)
+    self._update_ap_visualizer_value()
 
   def show_event(self):
     super().show_event()
@@ -181,6 +213,25 @@ class DeveloperLayoutMici(NavScroller):
 
   def _open_branch_selector(self):
     gui_app.push_widget(BranchSelectorMici(back_callback=gui_app.pop_widget))
+
+  def _update_ap_visualizer_value(self):
+    enabled = ui_state.params.get_bool("APVisualizerEnabled")
+    install_state = "ready" if ap_visualizer_installed() else "missing repo"
+    self._ap_visualizer_details_btn.set_value(f"{'on' if enabled else 'off'}, {install_state}")
+
+  def _open_ap_visualizer_details(self):
+    fallback = ap_visualizer_fallback_url()
+    status = "enabled" if ui_state.params.get_bool("APVisualizerEnabled") else "disabled"
+    install_state = "ready" if ap_visualizer_installed() else "missing ap_visualizer_repo"
+    details = f"{status}, {install_state}\n{AP_VISUALIZER_URL}\n"
+    if fallback:
+      details += f"{fallback}\n"
+    details += f"QR: {AP_VISUALIZER_URL}/qr.svg"
+    gui_app.push_widget(BigDialog("AP Visualizer", details))
+
+  def _on_ap_visualizer_enabled(self, state: bool):
+    ui_state.params.put_bool("APVisualizerEnabled", state)
+    self._update_ap_visualizer_value()
 
   def _on_joystick_debug_mode(self, state: bool):
     ui_state.params.put_bool("JoystickDebugMode", state)

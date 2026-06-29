@@ -1,8 +1,10 @@
 import os
 import operator
 import platform
+import sys
 
 from cereal import car, custom
+from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.system.hardware import PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
@@ -14,6 +16,7 @@ from openpilot.sunnypilot.models.helpers import get_active_model_runner
 from openpilot.sunnypilot.sunnylink.utils import sunnylink_need_register, sunnylink_ready, use_sunnylink_uploader
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
+AP_VISUALIZER_ROOT = os.path.join(BASEDIR, "ap_visualizer_repo")
 
 def driverview(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started or params.get_bool("IsDriverViewEnabled")
@@ -57,6 +60,11 @@ def qcomgps(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
+
+def ap_visualizer_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
+  server_path = os.path.join(AP_VISUALIZER_ROOT, "ap_visualizer", "server.py")
+  index_path = os.path.join(AP_VISUALIZER_ROOT, "dist", "index.html")
+  return bool(params.get_bool("APVisualizerEnabled") and os.path.exists(server_path) and os.path.exists(index_path))
 
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
@@ -152,6 +160,9 @@ procs = [
   PythonProcess("updated", "system.updated.updated", only_offroad, enabled=not PC),
   PythonProcess("uploader", "system.loggerd.uploader", uploader_ready),
   PythonProcess("statsd", "system.statsd", always_run),
+  NativeProcess("ap_visualizer", "ap_visualizer_repo",
+                [sys.executable, "-m", "ap_visualizer.server", "--host", "0.0.0.0", "--port", "8077", "--mode", "auto"],
+                ap_visualizer_ready),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),
 
   # debug procs
