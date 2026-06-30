@@ -15,7 +15,7 @@ from opendbc.car.rivian.values import RivianFlags
 from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 
 AP_VISUALIZER_PORT = 8077
-AP_VISUALIZER_URL = f"http://ap-visualizer.local:{AP_VISUALIZER_PORT}"
+AP_VISUALIZER_HOST = "ap-visualizer.local"
 AP_VISUALIZER_ROOT = os.path.join(BASEDIR, "ap_visualizer_repo")
 
 
@@ -24,13 +24,18 @@ def ap_visualizer_installed() -> bool:
          os.path.exists(os.path.join(AP_VISUALIZER_ROOT, "dist", "index.html"))
 
 
-def ap_visualizer_fallback_url() -> str:
+def ap_visualizer_ip() -> str:
   try:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
       sock.connect(("8.8.8.8", 80))
-      return f"http://{sock.getsockname()[0]}:{AP_VISUALIZER_PORT}"
+      return sock.getsockname()[0]
   except OSError:
     return ""
+
+
+def ap_visualizer_device_host() -> str:
+  hostname = socket.gethostname()
+  return f"{hostname}.local" if hostname else ""
 
 
 class DeveloperLayoutMici(NavScroller):
@@ -220,14 +225,24 @@ class DeveloperLayoutMici(NavScroller):
     self._ap_visualizer_details_btn.set_value(f"{'on' if enabled else 'off'}, {install_state}")
 
   def _open_ap_visualizer_details(self):
-    fallback = ap_visualizer_fallback_url()
-    status = "enabled" if ui_state.params.get_bool("APVisualizerEnabled") else "disabled"
-    install_state = "ready" if ap_visualizer_installed() else "missing ap_visualizer_repo"
-    details = f"{status}, {install_state}\n{AP_VISUALIZER_URL}\n"
-    if fallback:
-      details += f"{fallback}\n"
-    details += f"QR: {AP_VISUALIZER_URL}/qr.svg"
-    gui_app.push_widget(BigDialog("AP Visualizer", details))
+    device_host = ap_visualizer_device_host()
+    ip = ap_visualizer_ip()
+    status = "on" if ui_state.params.get_bool("APVisualizerEnabled") else "off"
+    install_state = "ready" if ap_visualizer_installed() else "missing repo"
+    details = [
+      f"AP Visualizer {status}, {install_state}",
+      AP_VISUALIZER_HOST,
+      f"port {AP_VISUALIZER_PORT}",
+    ]
+    if device_host and device_host != AP_VISUALIZER_HOST:
+      details.append(device_host)
+    if ip:
+      details.append(f"IP {ip}")
+
+    dialog = BigDialog("", "\n".join(details))
+    dialog._card._sub_label.set_font_size(28)
+    dialog._card._sub_label.set_line_height(0.85)
+    gui_app.push_widget(dialog)
 
   def _on_ap_visualizer_enabled(self, state: bool):
     ui_state.params.put_bool("APVisualizerEnabled", state)

@@ -63,8 +63,9 @@ def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def ap_visualizer_ready(started: bool, params: Params, CP: car.CarParams) -> bool:
   server_path = os.path.join(AP_VISUALIZER_ROOT, "ap_visualizer", "server.py")
+  mdns_path = os.path.join(AP_VISUALIZER_ROOT, "ap_visualizer", "mdns.py")
   index_path = os.path.join(AP_VISUALIZER_ROOT, "dist", "index.html")
-  return bool(params.get_bool("APVisualizerEnabled") and os.path.exists(server_path) and os.path.exists(index_path))
+  return bool(params.get_bool("APVisualizerEnabled") and os.path.exists(server_path) and os.path.exists(mdns_path) and os.path.exists(index_path))
 
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
@@ -162,6 +163,9 @@ procs = [
   PythonProcess("statsd", "system.statsd", always_run),
   NativeProcess("ap_visualizer", "ap_visualizer_repo",
                 [sys.executable, "-m", "ap_visualizer.server", "--host", "0.0.0.0", "--port", "8077", "--mode", "auto"],
+                ap_visualizer_ready),
+  NativeProcess("ap_visualizer_mdns", "ap_visualizer_repo",
+                [sys.executable, "-m", "ap_visualizer.mdns", "--hostname", "ap-visualizer.local", "--port", "8077"],
                 ap_visualizer_ready),
   PythonProcess("feedbackd", "selfdrive.ui.feedback.feedbackd", only_onroad),
 
